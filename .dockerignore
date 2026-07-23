@@ -1,0 +1,8 @@
+.git
+.idea
+data/
+coverage.out
+coverage.tmp.out
+*.md
+.env
+.env.*
