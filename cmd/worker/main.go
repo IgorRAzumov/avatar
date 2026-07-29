@@ -13,7 +13,11 @@ import (
 
 func main() {
 	log := logger.New(os.Stdout)
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Error("config error", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

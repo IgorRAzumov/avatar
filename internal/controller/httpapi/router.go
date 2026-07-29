@@ -5,7 +5,7 @@ import (
 
 	"avatar/internal/controller/httpapi/common/util"
 
-	"avatar/internal/controller/httpapi/common/middlewear"
+	apimiddleware "avatar/internal/controller/httpapi/common/middleware"
 	"avatar/internal/controller/httpapi/health"
 	"avatar/internal/controller/httpapi/read"
 	"avatar/internal/controller/httpapi/web"
@@ -30,7 +30,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
 	router.Use(middleware.Recoverer)
-	router.Use(middlewear.RequestLogger(deps.Logger))
+	router.Use(apimiddleware.RequestLogger(deps.Logger))
 
 	router.Get("/health", deps.Health.Health)
 

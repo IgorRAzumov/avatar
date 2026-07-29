@@ -8,7 +8,8 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	cfg := Load()
+	cfg, err := Load()
+	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
 	assert.Equal(t, ":8080", cfg.Server.Addr)
@@ -37,7 +38,8 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("RABBITMQ_ENABLED", "true")
 	t.Setenv("RABBITMQ_EXCHANGE", "custom.exchange")
 
-	cfg := Load()
+	cfg, err := Load()
+	require.NoError(t, err)
 	assert.Equal(t, ":9090", cfg.Server.Addr)
 	assert.Equal(t, "https://avatars.example.com", cfg.Server.BaseURL)
 	assert.Equal(t, int64(5), cfg.Server.MaxUploadMB)
@@ -52,12 +54,9 @@ func TestLoadFromEnv(t *testing.T) {
 	assert.Equal(t, "custom.exchange", cfg.RabbitMQ.Exchange)
 }
 
-func TestLoadIgnoresMalformedValues(t *testing.T) {
+func TestLoadMalformedValuesReturnError(t *testing.T) {
 	t.Setenv("MAX_UPLOAD_MB", "not-a-number")
-	t.Setenv("S3_USE_SSL", "not-a-bool")
 
-	cfg := Load()
-	assert.Equal(t, DefaultMaxUploadMB, cfg.Server.MaxUploadMB)
-	assert.False(t, cfg.S3.UseSSL)
-	assert.Equal(t, DefaultServerReadTimeout, cfg.Server.ReadTimeout)
+	_, err := Load()
+	require.Error(t, err)
 }

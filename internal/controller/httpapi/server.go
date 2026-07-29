@@ -20,19 +20,25 @@ func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) e
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		log.Info("server started", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("server error", "error", err)
-			os.Exit(1)
+			errCh <- err
 		}
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
 
-	log.Info("server shutting down")
+	var serveErr error
+	select {
+	case <-stop:
+		log.Info("server shutting down")
+	case err := <-errCh:
+		log.Error("server error", "error", err)
+		serveErr = err
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), config.DefaultShutdownTimeout)
 	defer cancel()
@@ -41,5 +47,5 @@ func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) e
 		return err
 	}
 	log.Info("server stopped")
-	return nil
+	return serveErr
 }

@@ -2,8 +2,10 @@ package write_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"avatar/internal/config"
 	"avatar/internal/domain/model"
 	"avatar/internal/domain/usecase/write"
 	"avatar/internal/testutil"
@@ -68,4 +70,43 @@ func TestAvatarCommandUpload(t *testing.T) {
 	assert.Equal(t, "user@test.com", resp.UserID)
 	assert.Equal(t, model.ProcessingStatusPending, resp.ProcessingStatus)
 	assert.NotEmpty(t, resp.ID)
+}
+
+func TestAvatarCommandUploadRollsBackOnStorageFailure(t *testing.T) {
+	repo := testutil.NewMemoryAvatarStore()
+	command := write.NewWriteUsecase(
+		repo,
+		repo,
+		failingStorage{},
+		testutil.NoopPublisher{},
+		config.DefaultMaxUploadBytes(),
+	)
+
+	_, err := command.Upload(context.Background(), "user@test.com", "photo.jpg", testutil.JPEG(20, 20))
+	require.Error(t, err)
+	assert.Empty(t, repo.Avatars)
+}
+
+type failingStorage struct{}
+
+var errStorageFailed = errors.New("storage failed")
+
+func (failingStorage) SaveOriginal(context.Context, string, []byte, string) error {
+	return errStorageFailed
+}
+
+func (failingStorage) SaveThumbnail(context.Context, string, string, []byte) error {
+	return errStorageFailed
+}
+
+func (failingStorage) OpenOriginal(context.Context, string) ([]byte, error) {
+	return nil, errStorageFailed
+}
+
+func (failingStorage) OpenThumbnail(context.Context, string, string) ([]byte, error) {
+	return nil, errStorageFailed
+}
+
+func (failingStorage) DeleteAll(context.Context, string) error {
+	return errStorageFailed
 }

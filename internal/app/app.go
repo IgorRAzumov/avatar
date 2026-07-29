@@ -20,7 +20,10 @@ import (
 )
 
 func Run(logger *logger.Logger) error {
-	appConfig := config.Load()
+	appConfig, err := config.Load()
+	if err != nil {
+		return err
+	}
 
 	avatarStore, err := postgres.Open(context.Background(), appConfig.Postgres.DSN)
 	if err != nil {

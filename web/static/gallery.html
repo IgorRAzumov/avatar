@@ -67,22 +67,57 @@
         }
 
         avatars.forEach((item) => {
-          const card = document.createElement('a');
-          card.href = item.url + '?size=300x300';
-          card.target = '_blank';
-          card.className = 'block bg-white/5 rounded-xl overflow-hidden border border-white/10 hover:border-purple-400/50 transition-colors';
+          const card = document.createElement('div');
+          card.className = 'bg-white/5 rounded-xl overflow-hidden border border-white/10';
+
+          const link = document.createElement('a');
+          link.href = item.url + '?size=300x300';
+          link.target = '_blank';
+          link.className = 'block hover:opacity-90 transition-opacity';
 
           const img = document.createElement('img');
           img.src = item.url + '?size=100x100';
           img.alt = item.file_name || item.id;
           img.className = 'w-full aspect-square object-cover';
 
+          link.appendChild(img);
+
           const meta = document.createElement('div');
           meta.className = 'p-2 text-xs text-white/70 truncate';
           meta.textContent = item.file_name || item.id;
 
-          card.appendChild(img);
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.textContent = 'Удалить';
+          deleteBtn.className = 'w-full py-2 text-xs text-red-300 hover:text-red-100 hover:bg-red-500/20 border-t border-white/10';
+          deleteBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (!confirm('Удалить аватарку ' + (item.file_name || item.id) + '?')) {
+              return;
+            }
+            deleteBtn.disabled = true;
+            try {
+              const delResp = await fetch('/api/v1/avatars/' + encodeURIComponent(item.id), {
+                method: 'DELETE',
+                headers: { 'X-User-ID': userId },
+              });
+              if (!delResp.ok) {
+                const errBody = await delResp.text();
+                throw new Error(errBody || ('HTTP ' + delResp.status));
+              }
+              card.remove();
+              if (!grid.children.length) {
+                emptyEl.classList.remove('hidden');
+              }
+            } catch (err) {
+              alert('Не удалось удалить: ' + err.message);
+              deleteBtn.disabled = false;
+            }
+          });
+
+          card.appendChild(link);
           card.appendChild(meta);
+          card.appendChild(deleteBtn);
           grid.appendChild(card);
         });
       } catch (err) {

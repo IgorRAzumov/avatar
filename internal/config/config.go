@@ -42,14 +42,13 @@ type RabbitMQConfig struct {
 }
 
 // Load builds the configuration from defaults and overrides any field whose
-// corresponding environment variable is set. Malformed values are ignored and
-// the default is kept.
-func Load() *Config {
+// corresponding environment variable is set.
+func Load() (*Config, error) {
 	cfg := defaults()
-	// env.Parse only overrides fields whose env var is present, leaving the
-	// prefilled defaults intact otherwise. On a malformed value we keep defaults.
-	_ = env.Parse(cfg)
-	return cfg
+	if err := env.Parse(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func defaults() *Config {

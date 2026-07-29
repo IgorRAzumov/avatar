@@ -74,6 +74,9 @@ func (usecase *Usecase) Upload(
 	}
 
 	if err := usecase.filesRepository.SaveOriginal(ctx, avatar.ID, data, mimeType); err != nil {
+		if delErr := usecase.writeRepository.SoftDelete(ctx, avatar.ID); delErr != nil {
+			return nil, fmt.Errorf("upload file: %w (rollback avatar record: %v)", err, delErr)
+		}
 		return nil, fmt.Errorf("upload file: %w", err)
 	}
 
