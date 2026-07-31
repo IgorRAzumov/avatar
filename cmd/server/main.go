@@ -1,17 +1,25 @@
 package main
 
 import (
-	"os"
-
+	"avatar/cmd"
 	"avatar/internal/app"
-	"avatar/internal/logger"
+	"avatar/internal/config"
 )
 
 func main() {
-	log := logger.New(os.Stdout)
+	cfg, err := config.Load()
+	if err != nil {
+		cmd.ExitWithLog(nil, err)
+	}
 
-	if err := app.Run(log); err != nil {
-		log.Error("application error", "error", err)
-		os.Exit(1)
+	log, runtime, err := app.InitApp(cfg, cfg.Observability.ServiceName)
+	if err != nil {
+		cmd.ExitWithLog(nil, err)
+	}
+	defer func() { cmd.ShutdownRuntime(runtime) }()
+
+	if err := app.Run(log, cfg); err != nil {
+		cmd.ShutdownRuntime(runtime)
+		cmd.ExitWithLog(log, err)
 	}
 }

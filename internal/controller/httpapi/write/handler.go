@@ -65,7 +65,7 @@ func (handler *Handler) Upload(writer http.ResponseWriter, request *http.Request
 
 	item, err := handler.writeUsecase.Upload(request.Context(), userID, header.Filename, data)
 	if err != nil {
-		util.WriteServiceError(handler.logger, writer, err, handler.maxSize)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, handler.maxSize)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (handler *Handler) DeleteAvatar(writer http.ResponseWriter, request *http.R
 
 	avatarID := request.PathValue("avatar_id")
 	if err := handler.writeUsecase.Delete(request.Context(), avatarID, userID); err != nil {
-		util.WriteServiceError(handler.logger, writer, err, handler.maxSize)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, handler.maxSize)
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -102,7 +102,7 @@ func (handler *Handler) DeleteUserAvatar(writer http.ResponseWriter, request *ht
 
 	targetUserID := util.PathUserID(request)
 	if err := handler.writeUsecase.DeleteByUser(request.Context(), targetUserID, userID); err != nil {
-		util.WriteServiceError(handler.logger, writer, err, handler.maxSize)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, handler.maxSize)
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)

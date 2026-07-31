@@ -30,7 +30,7 @@ func (handler *Handler) GetAvatar(writer http.ResponseWriter, request *http.Requ
 
 	image, err := handler.readUsecase.GetImage(request.Context(), avatarID, size, format)
 	if err != nil {
-		util.WriteServiceError(handler.logger, writer, err, 0)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, 0)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (handler *Handler) GetMetadata(writer http.ResponseWriter, request *http.Re
 	avatarID := request.PathValue("avatar_id")
 	item, err := handler.readUsecase.GetByID(request.Context(), avatarID)
 	if err != nil {
-		util.WriteServiceError(handler.logger, writer, err, 0)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, 0)
 		return
 	}
 	util.WriteJSON(writer, http.StatusOK, mapper.AvatarMetadataResponse(handler.baseURL, avatarID, item))
@@ -54,7 +54,7 @@ func (handler *Handler) GetUserAvatar(writer http.ResponseWriter, request *http.
 
 	image, err := handler.readUsecase.GetUserAvatarImage(request.Context(), userID, size, format)
 	if err != nil {
-		util.WriteServiceError(handler.logger, writer, err, 0)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, 0)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (handler *Handler) GetListUserAvatars(writer http.ResponseWriter, request *
 	userID := util.PathUserID(request)
 	avatars, err := handler.readUsecase.ListByUser(request.Context(), userID)
 	if err != nil {
-		util.WriteServiceError(handler.logger, writer, err, 0)
+		util.WriteServiceError(request.Context(), handler.logger, writer, err, 0)
 		return
 	}
 

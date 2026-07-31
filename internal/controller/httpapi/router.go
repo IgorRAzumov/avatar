@@ -18,6 +18,7 @@ import (
 
 type RouterDeps struct {
 	Logger      *logger.Logger
+	ServiceName string
 	AvatarRead  *read.Handler
 	AvatarWrite *write.Handler
 	Web         *web.Handler
@@ -30,6 +31,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
 	router.Use(middleware.Recoverer)
+	router.Use(apimiddleware.Tracing(deps.ServiceName))
+	router.Use(apimiddleware.PrometheusMetrics)
 	router.Use(apimiddleware.RequestLogger(deps.Logger))
 
 	router.Get("/health", deps.Health.Health)

@@ -7,10 +7,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Postgres PostgresConfig
-	S3       S3Config
-	RabbitMQ RabbitMQConfig
+	Server        ServerConfig
+	Postgres      PostgresConfig
+	S3            S3Config
+	RabbitMQ      RabbitMQConfig
+	Observability ObservabilityConfig
 }
 
 type ServerConfig struct {
@@ -41,8 +42,18 @@ type RabbitMQConfig struct {
 	Exchange string `env:"RABBITMQ_EXCHANGE"`
 }
 
-// Load builds the configuration from defaults and overrides any field whose
-// corresponding environment variable is set.
+type ObservabilityConfig struct {
+	ServiceName      string  `env:"OTEL_SERVICE_NAME"`
+	ServiceVersion   string  `env:"OTEL_SERVICE_VERSION"`
+	Environment      string  `env:"OTEL_ENVIRONMENT"`
+	LogLevel         string  `env:"LOG_LEVEL"`
+	TracingEnabled   bool    `env:"OTEL_TRACING_ENABLED"`
+	LogsEnabled      bool    `env:"OTEL_LOGS_ENABLED"`
+	MetricsEnabled   bool    `env:"OTEL_METRICS_ENABLED"`
+	OTLPEndpoint     string  `env:"OTEL_EXPORTER_OTLP_ENDPOINT"`
+	TraceSampleRatio float64 `env:"OTEL_TRACE_SAMPLE_RATIO"`
+}
+
 func Load() (*Config, error) {
 	cfg := defaults()
 	if err := env.Parse(cfg); err != nil {
@@ -75,6 +86,17 @@ func defaults() *Config {
 			URL:      DefaultRabbitMQURL,
 			Enabled:  false,
 			Exchange: DefaultRabbitMQExchange,
+		},
+		Observability: ObservabilityConfig{
+			ServiceName:      DefaultServiceName,
+			ServiceVersion:   DefaultServiceVersion,
+			Environment:      DefaultEnvironment,
+			LogLevel:         DefaultLogLevel,
+			TracingEnabled:   DefaultTracingEnabled,
+			LogsEnabled:      DefaultLogsEnabled,
+			MetricsEnabled:   DefaultMetricsEnabled,
+			OTLPEndpoint:     DefaultOTLPEndpoint,
+			TraceSampleRatio: DefaultTraceSampleRatio,
 		},
 	}
 }

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -21,7 +22,7 @@ func WriteError(writer http.ResponseWriter, status int, body commonmodel.ErrorRe
 	WriteJSON(writer, status, body)
 }
 
-func WriteServiceError(logger *logger.Logger, w http.ResponseWriter, err error, maxSize int64) {
+func WriteServiceError(ctx context.Context, logger *logger.Logger, w http.ResponseWriter, err error, maxSize int64) {
 	switch {
 	case errors.Is(err, model.ErrNotFound):
 		WriteError(w, http.StatusNotFound, commonmodel.ErrorResponse{Error: commonmodel.MsgAvatarNotFound})
@@ -41,7 +42,7 @@ func WriteServiceError(logger *logger.Logger, w http.ResponseWriter, err error, 
 			MaxSize: maxSize,
 		})
 	default:
-		logger.Error("request failed", "error", err)
+		logger.WithContext(ctx).Error("request failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, commonmodel.ErrorResponse{Error: commonmodel.MsgInternalServerError})
 	}
 }
