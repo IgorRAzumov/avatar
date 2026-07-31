@@ -1,6 +1,7 @@
 package util_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,7 @@ func TestWriteServiceErrorMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			util.WriteServiceError(logger.Nop(), rec, tc.err, 1024)
+			util.WriteServiceError(context.Background(), logger.Nop(), rec, tc.err, 1024)
 			assert.Equal(t, tc.want, rec.Code)
 
 			var body commonmodel.ErrorResponse

@@ -8,8 +8,12 @@ import (
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 	"avatar/internal/processor"
 	"avatar/internal/retry"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Consumer struct {
@@ -17,6 +21,8 @@ type Consumer struct {
 	processor *processor.ImageProcessor
 	log       *logger.Logger
 }
+
+type messageHandler func(ctx context.Context, delivery amqp.Delivery) error
 
 func NewConsumer(cfg config.RabbitMQConfig, imageProcessor *processor.ImageProcessor, log *logger.Logger) (*Consumer, error) {
 	client, err := NewClient(cfg)
@@ -51,8 +57,6 @@ func (consumer *Consumer) Run(ctx context.Context) error {
 	}
 }
 
-type messageHandler func(ctx context.Context, body []byte) error
-
 func (consumer *Consumer) consume(ctx context.Context, queue string, handler messageHandler) error {
 	deliveries, err := consumer.client.channel.Consume(
 		queue,
@@ -75,19 +79,31 @@ func (consumer *Consumer) consume(ctx context.Context, queue string, handler mes
 			if !ok {
 				return fmt.Errorf("delivery channel closed for queue %q", queue)
 			}
-			if err := handler(ctx, delivery.Body); err != nil {
-				consumer.log.Error("message processing failed", "queue", queue, "error", err)
+			status := "success"
+			msgCtx := extractTraceContext(ctx, delivery.Headers)
+			err := observability.Run(msgCtx, "rabbitmq.consume", func(ctx context.Context) error {
+				return handler(ctx, delivery)
+			},
+				attribute.String("messaging.system", "rabbitmq"),
+				attribute.String("messaging.destination", queue),
+				attribute.String("messaging.message_id", delivery.MessageId),
+			)
+			if err != nil {
+				status = "error"
+				consumer.log.WithContext(msgCtx).Error("message processing failed", "queue", queue, "error", err)
 				_ = delivery.Nack(false, false)
-				continue
+			} else {
+				_ = delivery.Ack(false)
 			}
-			_ = delivery.Ack(false)
+
+			observability.RecordRabbitMQConsumed(queue, status)
 		}
 	}
 }
 
-func (consumer *Consumer) handleUpload(ctx context.Context, body []byte) error {
+func (consumer *Consumer) handleUpload(ctx context.Context, delivery amqp.Delivery) error {
 	var event model.AvatarUploadEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
 		return fmt.Errorf("decode upload event: %w", err)
 	}
 	return consumer.process(ctx, event.AvatarID, func() error {
@@ -95,9 +111,9 @@ func (consumer *Consumer) handleUpload(ctx context.Context, body []byte) error {
 	})
 }
 
-func (consumer *Consumer) handleDelete(ctx context.Context, body []byte) error {
+func (consumer *Consumer) handleDelete(ctx context.Context, delivery amqp.Delivery) error {
 	var event model.AvatarDeleteEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
 		return fmt.Errorf("decode delete event: %w", err)
 	}
 	return consumer.process(ctx, event.AvatarID, func() error {
@@ -107,7 +123,12 @@ func (consumer *Consumer) handleDelete(ctx context.Context, body []byte) error {
 
 func (consumer *Consumer) process(ctx context.Context, avatarID string, fn func() error) error {
 	return retry.WithBackoff(ctx, retry.DefaultMaxAttempts, fn, func(attempt int, err error) {
-		consumer.log.Warn("processing failed", "avatar_id", avatarID, "attempt", attempt, "error", err)
+		observability.AddEvent(ctx, "retry",
+			attribute.Int("attempt", attempt),
+			attribute.String("error", err.Error()),
+			attribute.String("avatar_id", avatarID),
+		)
+		consumer.log.WithContext(ctx).Warn("processing failed", "avatar_id", avatarID, "attempt", attempt, "error", err)
 	})
 }
 

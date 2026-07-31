@@ -96,17 +96,7 @@ func (usecase *Usecase) Delete(ctx context.Context, avatarID, requestUserID stri
 	if err != nil {
 		return err
 	}
-	if avatar.UserID != requestUserID {
-		return model.ErrForbidden
-	}
-
-	if err := usecase.writeRepository.SoftDelete(ctx, avatarID); err != nil {
-		return err
-	}
-
-	return usecase.publisher.PublishDeleteEvent(ctx, model.AvatarDeleteEvent{
-		AvatarID: avatarID,
-	})
+	return usecase.deleteOwned(ctx, avatar, requestUserID)
 }
 
 func (usecase *Usecase) DeleteByUser(ctx context.Context, userID, requestUserID string) error {
@@ -117,5 +107,19 @@ func (usecase *Usecase) DeleteByUser(ctx context.Context, userID, requestUserID 
 	if err != nil {
 		return err
 	}
-	return usecase.Delete(ctx, avatar.ID, requestUserID)
+	return usecase.deleteOwned(ctx, avatar, requestUserID)
+}
+
+func (usecase *Usecase) deleteOwned(ctx context.Context, avatar *model.Avatar, requestUserID string) error {
+	if avatar.UserID != requestUserID {
+		return model.ErrForbidden
+	}
+
+	if err := usecase.writeRepository.SoftDelete(ctx, avatar.ID); err != nil {
+		return err
+	}
+
+	return usecase.publisher.PublishDeleteEvent(ctx, model.AvatarDeleteEvent{
+		AvatarID: avatar.ID,
+	})
 }

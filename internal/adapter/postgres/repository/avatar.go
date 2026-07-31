@@ -9,60 +9,86 @@ import (
 
 	"avatar/internal/adapter/objectkey"
 	"avatar/internal/domain/model"
+	"avatar/internal/observability"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type PostgresAvatarStore struct {
-	pool *pgxpool.Pool
+	pool           *pgxpool.Pool
+	metricsCleanup func()
 }
 
 func NewPostgresAvatarStore(pool *pgxpool.Pool) *PostgresAvatarStore {
 	return &PostgresAvatarStore{pool: pool}
 }
 
+func (store *PostgresAvatarStore) SetMetricsCleanup(cleanup func()) {
+	store.metricsCleanup = cleanup
+}
+
 func (store *PostgresAvatarStore) Close() {
+	if store.metricsCleanup != nil {
+		store.metricsCleanup()
+		store.metricsCleanup = nil
+	}
 	if store.pool != nil {
 		store.pool.Close()
 	}
 }
 
 func (store *PostgresAvatarStore) Ping(ctx context.Context) error {
-	return store.pool.Ping(ctx)
+	return store.withSpan(ctx, "db.ping", func(ctx context.Context) error {
+		return store.pool.Ping(ctx)
+	})
 }
 
 func (store *PostgresAvatarStore) Create(ctx context.Context, avatar *model.Avatar) error {
-	if avatar.ID == "" {
-		avatar.ID = uuid.New().String()
-	}
+	return store.withSpan(ctx, "db.create_avatar", func(ctx context.Context) error {
+		if avatar.ID == "" {
+			avatar.ID = uuid.New().String()
+		}
 
-	query := `
+		query := `
 		INSERT INTO avatars (id, user_id, file_name, mime_type, size_bytes, s3_key, thumbnail_s3_keys, upload_status, processing_status, width, height)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at, updated_at`
 
-	return store.pool.QueryRow(ctx, query,
-		avatar.ID, avatar.UserID, avatar.FileName, avatar.MimeType,
-		avatar.SizeBytes, objectkey.OriginalObjectKey(avatar.ID), []byte("{}"),
-		avatar.UploadStatus, avatar.ProcessingStatus,
-		avatar.Width, avatar.Height,
-	).Scan(&avatar.CreatedAt, &avatar.UpdatedAt)
+		return store.pool.QueryRow(ctx, query,
+			avatar.ID, avatar.UserID, avatar.FileName, avatar.MimeType,
+			avatar.SizeBytes, objectkey.OriginalObjectKey(avatar.ID), []byte("{}"),
+			avatar.UploadStatus, avatar.ProcessingStatus,
+			avatar.Width, avatar.Height,
+		).Scan(&avatar.CreatedAt, &avatar.UpdatedAt)
+	}, attribute.String("user_id", avatar.UserID))
 }
 
 func (store *PostgresAvatarStore) GetByID(ctx context.Context, id string) (*model.Avatar, error) {
-	query := `
+	var avatar *model.Avatar
+	err := store.withSpan(ctx, "db.get_avatar_by_id", func(ctx context.Context) error {
+		query := `
 		SELECT id, user_id, file_name, mime_type, size_bytes,
 		       upload_status, processing_status, width, height, created_at, updated_at, deleted_at
 		FROM avatars
 		WHERE id = $1 AND deleted_at IS NULL`
 
-	return store.scanAvatar(ctx, query, id)
+		result, queryErr := store.scanAvatar(ctx, query, id)
+		if queryErr != nil {
+			return queryErr
+		}
+		avatar = result
+		return nil
+	}, attribute.String("avatar_id", id))
+	return avatar, err
 }
 
 func (store *PostgresAvatarStore) GetLatestByUserID(ctx context.Context, userID string) (*model.Avatar, error) {
-	query := `
+	var avatar *model.Avatar
+	err := store.withSpan(ctx, "db.get_latest_avatar", func(ctx context.Context) error {
+		query := `
 		SELECT id, user_id, file_name, mime_type, size_bytes,
 		       upload_status, processing_status, width, height, created_at, updated_at, deleted_at
 		FROM avatars
@@ -70,64 +96,126 @@ func (store *PostgresAvatarStore) GetLatestByUserID(ctx context.Context, userID 
 		ORDER BY created_at DESC
 		LIMIT 1`
 
-	return store.scanAvatar(ctx, query, userID)
+		result, queryErr := store.scanAvatar(ctx, query, userID)
+		if queryErr != nil {
+			return queryErr
+		}
+		avatar = result
+		return nil
+	}, attribute.String("user_id", userID))
+	return avatar, err
 }
 
 func (store *PostgresAvatarStore) ListByUserID(ctx context.Context, userID string) ([]*model.Avatar, error) {
-	query := `
+	var avatars []*model.Avatar
+	err := store.withSpan(ctx, "db.list_avatars", func(ctx context.Context) error {
+		query := `
 		SELECT id, user_id, file_name, mime_type, size_bytes,
 		       upload_status, processing_status, width, height, created_at, updated_at, deleted_at
 		FROM avatars
 		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC`
 
-	rows, err := store.pool.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("query avatars: %w", err)
-	}
-	defer rows.Close()
-
-	var avatars []*model.Avatar
-	for rows.Next() {
-		a, err := scanAvatarRow(rows)
-		if err != nil {
-			return nil, err
+		rows, queryErr := store.pool.Query(ctx, query, userID)
+		if queryErr != nil {
+			return fmt.Errorf("query avatars: %w", queryErr)
 		}
-		avatars = append(avatars, a)
-	}
-	return avatars, rows.Err()
+		defer rows.Close()
+
+		for rows.Next() {
+			a, scanErr := scanAvatarRow(rows)
+			if scanErr != nil {
+				return scanErr
+			}
+			avatars = append(avatars, a)
+		}
+		return rows.Err()
+	}, attribute.String("user_id", userID))
+	return avatars, err
+}
+
+func (store *PostgresAvatarStore) CountActive(ctx context.Context) (int64, error) {
+	var count int64
+	err := store.withSpan(ctx, "db.count_active_avatars", func(ctx context.Context) error {
+		return store.pool.QueryRow(ctx, `SELECT COUNT(*) FROM avatars WHERE deleted_at IS NULL`).Scan(&count)
+	})
+	return count, err
+}
+
+func (store *PostgresAvatarStore) CountActiveByUser(ctx context.Context) (map[string]int64, error) {
+	counts := make(map[string]int64)
+	err := store.withSpan(ctx, "db.count_active_avatars_by_user", func(ctx context.Context) error {
+		rows, queryErr := store.pool.Query(ctx, `
+			SELECT user_id, COUNT(*)
+			FROM avatars
+			WHERE deleted_at IS NULL
+			GROUP BY user_id`)
+		if queryErr != nil {
+			return fmt.Errorf("query avatar counts: %w", queryErr)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var userID string
+			var count int64
+			if scanErr := rows.Scan(&userID, &count); scanErr != nil {
+				return scanErr
+			}
+			counts[userID] = count
+		}
+		return rows.Err()
+	})
+	return counts, err
 }
 
 func (store *PostgresAvatarStore) SoftDelete(ctx context.Context, id string) error {
-	query := `UPDATE avatars SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
-	tag, err := store.pool.Exec(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("soft delete: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return model.ErrNotFound
-	}
-	return nil
+	return store.withSpan(ctx, "db.soft_delete_avatar", func(ctx context.Context) error {
+		query := `UPDATE avatars SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
+		tag, err := store.pool.Exec(ctx, query, id)
+		if err != nil {
+			return fmt.Errorf("soft delete: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return model.ErrNotFound
+		}
+		return nil
+	}, attribute.String("avatar_id", id))
 }
 
 func (store *PostgresAvatarStore) UpdateProcessingStatus(ctx context.Context, id, status string) error {
-	query := `UPDATE avatars SET processing_status = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
-	_, err := store.pool.Exec(ctx, query, id, status)
-	return err
+	return store.withSpan(ctx, "db.update_processing_status", func(ctx context.Context) error {
+		query := `UPDATE avatars SET processing_status = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
+		_, err := store.pool.Exec(ctx, query, id, status)
+		return err
+	}, attribute.String("avatar_id", id), attribute.String("status", status))
 }
 
 func (store *PostgresAvatarStore) CompleteProcessing(ctx context.Context, id string, width, height int) error {
-	thumbsJSON, err := json.Marshal(thumbnailKeysForDB(id))
-	if err != nil {
-		return fmt.Errorf("marshal thumbnails: %w", err)
-	}
+	return store.withSpan(ctx, "db.complete_processing", func(ctx context.Context) error {
+		thumbsJSON, err := json.Marshal(thumbnailKeysForDB(id))
+		if err != nil {
+			return fmt.Errorf("marshal thumbnails: %w", err)
+		}
 
-	query := `
+		query := `
 		UPDATE avatars
 		SET thumbnail_s3_keys = $2, processing_status = $3, width = $4, height = $5, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL`
 
-	_, err = store.pool.Exec(ctx, query, id, thumbsJSON, model.ProcessingStatusCompleted, width, height)
+		_, err = store.pool.Exec(ctx, query, id, thumbsJSON, model.ProcessingStatusCompleted, width, height)
+		return err
+	}, attribute.String("avatar_id", id))
+}
+
+func (store *PostgresAvatarStore) withSpan(
+	ctx context.Context,
+	operation string,
+	fn func(context.Context) error,
+	attrs ...attribute.KeyValue,
+) error {
+	start := time.Now()
+	err := observability.Run(ctx, operation, fn, attrs...)
+	observability.RecordDBQuery(operation, time.Since(start))
 	return err
 }
 

@@ -1,8 +1,10 @@
 package app
 
 import (
+	"avatar/internal/observability"
 	"context"
 	"net/http"
+	"os"
 
 	"avatar/internal/adapter/postgres"
 	"avatar/internal/adapter/postgres/repository"
@@ -19,11 +21,17 @@ import (
 	"avatar/internal/logger"
 )
 
-func Run(logger *logger.Logger) error {
-	appConfig, err := config.Load()
+func InitApp(cfg *config.Config, serviceName string) (*logger.Logger, *observability.Runtime, error) {
+	obs, err := initObservability(cfg, serviceName)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
+	log := initLogger(cfg, obs, serviceName)
+	return log, &obs, nil
+}
+
+func Run(log *logger.Logger, appConfig *config.Config) error {
+	serviceLog := log.WithService(appConfig.Observability.ServiceName)
 
 	avatarStore, err := postgres.Open(context.Background(), appConfig.Postgres.DSN)
 	if err != nil {
@@ -36,19 +44,44 @@ func Run(logger *logger.Logger) error {
 		return err
 	}
 
-	publisher, broker, err := NewPublisher(appConfig, avatarStore, avatarStore, fileStore, logger)
+	publisher, broker, err := NewPublisher(appConfig, avatarStore, avatarStore, fileStore, serviceLog)
 	if err != nil {
 		return err
 	}
 	if closer, ok := publisher.(interface{ Close() error }); ok {
 		defer func() {
 			if err := closer.Close(); err != nil {
-				logger.Error("close publisher", "error", err)
+				serviceLog.Error("close publisher", "error", err)
 			}
 		}()
 	}
 
-	return httpapi.StartServer(logger, appConfig, newRouter(appConfig, avatarStore, fileStore, publisher, broker, logger))
+	return httpapi.StartServer(serviceLog, appConfig, newRouter(appConfig, avatarStore, fileStore, publisher, broker, serviceLog))
+}
+
+func initLogger(cfg *config.Config, obs observability.Runtime, serviceName string) *logger.Logger {
+	return logger.New(
+		os.Stdout,
+		logger.ParseLevel(cfg.Observability.LogLevel),
+		logger.WithOTLP(obs.LogProvider, serviceName),
+	).WithService(serviceName)
+}
+
+func initObservability(cfg *config.Config, serviceName string) (observability.Runtime, error) {
+	obs, err := observability.Init(context.Background(), observability.Config{
+		ServiceName:      serviceName,
+		ServiceVersion:   cfg.Observability.ServiceVersion,
+		Environment:      cfg.Observability.Environment,
+		TracingEnabled:   cfg.Observability.TracingEnabled,
+		LogsEnabled:      cfg.Observability.LogsEnabled,
+		MetricsEnabled:   cfg.Observability.MetricsEnabled,
+		OTLPEndpoint:     cfg.Observability.OTLPEndpoint,
+		TraceSampleRatio: cfg.Observability.TraceSampleRatio,
+	})
+	if err != nil {
+		return observability.Runtime{}, err
+	}
+	return obs, nil
 }
 
 func newRouter(
@@ -59,13 +92,17 @@ func newRouter(
 	broker Pinger,
 	log *logger.Logger,
 ) http.Handler {
-	avatarQuery := domainread.NewReadUsecase(avatarStore, filesStorage)
-	avatarCommand := domainwrite.NewWriteUsecase(
-		avatarStore,
-		avatarStore,
-		filesStorage,
-		publisher,
-		cfg.MaxUploadBytes(),
+	rawRead := domainread.NewReadUsecase(avatarStore, filesStorage)
+	avatarQuery := newInstrumentedReadUsecase(rawRead)
+	avatarCommand := newInstrumentedWriteUsecase(
+		domainwrite.NewWriteUsecase(
+			avatarStore,
+			avatarStore,
+			filesStorage,
+			publisher,
+			cfg.MaxUploadBytes(),
+		),
+		rawRead,
 	)
 	healthChecker := domainhealth.NewChecker(avatarStore, filesStorage, "s3", broker)
 
@@ -73,6 +110,7 @@ func newRouter(
 
 	return httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:      log,
+		ServiceName: cfg.Observability.ServiceName,
 		AvatarRead:  read.New(log, avatarQuery, cfg.Server.BaseURL),
 		AvatarWrite: avatarWrite,
 		Web:         web.New(avatarWrite),

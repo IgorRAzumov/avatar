@@ -18,8 +18,9 @@ import (
 func TestRouterHealthRoute(t *testing.T) {
 	checker := domainhealth.NewChecker(nil, nil, "storage", nil)
 	router := NewRouter(RouterDeps{
-		Logger: logger.Nop(),
-		Health: health.New(checker),
+		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
+		Health:      health.New(checker),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -34,6 +35,7 @@ func TestRouterAPIRoutesRegistered(t *testing.T) {
 
 	router := NewRouter(RouterDeps{
 		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
 		AvatarWrite: write.New(logger.Nop(), nil, 1024, "http://localhost"),
 		Health:      health.New(checker),
 	})
@@ -48,6 +50,7 @@ func TestRouterWebUploadPage(t *testing.T) {
 	writeHandler := write.New(logger.Nop(), nil, 1024, "http://localhost")
 	router := NewRouter(RouterDeps{
 		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
 		AvatarWrite: writeHandler,
 		Web:         web.New(writeHandler),
 	})

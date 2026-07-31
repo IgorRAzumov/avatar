@@ -7,8 +7,10 @@ import (
 
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
+	"avatar/internal/observability"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Publisher struct {
@@ -32,24 +34,42 @@ func (publisher *Publisher) PublishDeleteEvent(ctx context.Context, event model.
 }
 
 func (publisher *Publisher) publish(ctx context.Context, routingKey, messageID string, payload any) error {
-	body, err := json.Marshal(payload)
+	status := "success"
+
+	err := observability.Run(ctx, "rabbitmq.publish", func(ctx context.Context) error {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal event: %w", err)
+		}
+
+		headers := amqp.Table{}
+		injectTraceContext(ctx, headers)
+
+		return publisher.client.channel.PublishWithContext(
+			ctx,
+			publisher.client.exchange,
+			routingKey,
+			false,
+			false,
+			amqp.Publishing{
+				ContentType:  "application/json",
+				DeliveryMode: amqp.Persistent,
+				MessageId:    messageID,
+				Body:         body,
+				Headers:      headers,
+			},
+		)
+	},
+		attribute.String("messaging.system", "rabbitmq"),
+		attribute.String("messaging.destination", routingKey),
+		attribute.String("messaging.message_id", messageID),
+	)
 	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
+		status = "error"
 	}
 
-	return publisher.client.channel.PublishWithContext(
-		ctx,
-		publisher.client.exchange,
-		routingKey,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType:  "application/json",
-			DeliveryMode: amqp.Persistent,
-			MessageId:    messageID,
-			Body:         body,
-		},
-	)
+	observability.RecordRabbitMQPublished(routingKey, status)
+	return err
 }
 
 func (publisher *Publisher) Ping(ctx context.Context) error {

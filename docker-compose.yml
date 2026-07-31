@@ -50,13 +50,87 @@ services:
       timeout: 5s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    command: [ "--config=/etc/otelcol/config.yaml" ]
+    volumes:
+      - ./deploy/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+    depends_on:
+      jaeger:
+        condition: service_started
+      opensearch:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "19090:9090"
+    depends_on:
+      - otel-collector
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearchdata:/usr/share/opensearch/data
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.0
+    environment:
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+      - opensearch
+      - otel-collector
+
   server:
     build: .
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       SERVER_ADDR: ":8080"
-      BASE_URL: http://localhost:8080
+      BASE_URL: http://localhost:8081
       DATABASE_DSN: postgres://avatar:avatar@postgres:5432/avatar?sslmode=disable
       S3_ENDPOINT: minio:9000
       S3_ACCESS_KEY: minioadmin
@@ -65,6 +139,12 @@ services:
       S3_USE_SSL: "false"
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       RABBITMQ_ENABLED: "true"
+      OTEL_SERVICE_NAME: avatar-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_TRACING_ENABLED: "true"
+      OTEL_LOGS_ENABLED: "true"
+      OTEL_METRICS_ENABLED: "true"
+      LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +152,8 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   worker:
     build: .
@@ -85,6 +167,12 @@ services:
       S3_USE_SSL: "false"
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       RABBITMQ_ENABLED: "true"
+      OTEL_SERVICE_NAME: avatar-service-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_TRACING_ENABLED: "true"
+      OTEL_LOGS_ENABLED: "true"
+      OTEL_METRICS_ENABLED: "true"
+      LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,7 +180,11 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
 volumes:
   pgdata:
   miniodata:
+  grafanadata:
+  opensearchdata:
