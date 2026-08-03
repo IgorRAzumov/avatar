@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GophProfile — галерея</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <div class="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
+      <header class="bg-gradient-to-r from-purple-600 to-blue-600 p-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-white">Галерея аватарок</h1>
+          <p id="userLabel" class="text-white/80 mt-1 text-sm"></p>
+        </div>
+        <a href="/web/upload" class="text-white/90 hover:text-white underline text-sm">← Загрузить новую</a>
+      </header>
+
+      <main class="p-6">
+        <div id="loading" class="text-white/70 text-center py-8">Загрузка…</div>
+        <div id="error" class="hidden bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg mb-4"></div>
+        <div id="empty" class="hidden text-white/60 text-center py-8">У пользователя пока нет аватарок.</div>
+        <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"></div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const prefix = '/web/gallery/';
+    const userId = decodeURIComponent(window.location.pathname.startsWith(prefix)
+      ? window.location.pathname.slice(prefix.length)
+      : '');
+
+    document.getElementById('userLabel').textContent = userId || '(не указан user_id)';
+
+    async function loadGallery() {
+      const loading = document.getElementById('loading');
+      const errorEl = document.getElementById('error');
+      const emptyEl = document.getElementById('empty');
+      const grid = document.getElementById('grid');
+
+      if (!userId) {
+        loading.classList.add('hidden');
+        errorEl.textContent = 'Не указан user_id в URL';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/v1/users/' + encodeURIComponent(userId) + '/avatars');
+        const data = await response.json();
+        loading.classList.add('hidden');
+
+        if (!response.ok) {
+          errorEl.textContent = data.error || ('HTTP ' + response.status);
+          errorEl.classList.remove('hidden');
+          return;
+        }
+
+        const avatars = data.avatars || [];
+        if (avatars.length === 0) {
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+
+        avatars.forEach((item) => {
+          const card = document.createElement('div');
+          card.className = 'bg-white/5 rounded-xl overflow-hidden border border-white/10';
+
+          const link = document.createElement('a');
+          link.href = item.url + '?size=300x300';
+          link.target = '_blank';
+          link.className = 'block hover:opacity-90 transition-opacity';
+
+          const img = document.createElement('img');
+          img.src = item.url + '?size=100x100';
+          img.alt = item.file_name || item.id;
+          img.className = 'w-full aspect-square object-cover';
+
+          link.appendChild(img);
+
+          const meta = document.createElement('div');
+          meta.className = 'p-2 text-xs text-white/70 truncate';
+          meta.textContent = item.file_name || item.id;
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.textContent = 'Удалить';
+          deleteBtn.className = 'w-full py-2 text-xs text-red-300 hover:text-red-100 hover:bg-red-500/20 border-t border-white/10';
+          deleteBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (!confirm('Удалить аватарку ' + (item.file_name || item.id) + '?')) {
+              return;
+            }
+            deleteBtn.disabled = true;
+            try {
+              const delResp = await fetch('/api/v1/avatars/' + encodeURIComponent(item.id), {
+                method: 'DELETE',
+                headers: { 'X-User-ID': userId },
+              });
+              if (!delResp.ok) {
+                const errBody = await delResp.text();
+                throw new Error(errBody || ('HTTP ' + delResp.status));
+              }
+              card.remove();
+              if (!grid.children.length) {
+                emptyEl.classList.remove('hidden');
+              }
+            } catch (err) {
+              alert('Не удалось удалить: ' + err.message);
+              deleteBtn.disabled = false;
+            }
+          });
+
+          card.appendChild(link);
+          card.appendChild(meta);
+          card.appendChild(deleteBtn);
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        loading.classList.add('hidden');
+        errorEl.textContent = 'Ошибка: ' + err.message;
+        errorEl.classList.remove('hidden');
+      }
+    }
+
+    loadGallery();
+  </script>
+</body>
+
+</html>
