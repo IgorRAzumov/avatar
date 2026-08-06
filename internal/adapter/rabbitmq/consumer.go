@@ -8,17 +8,28 @@ import (
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 	"avatar/internal/processor"
 	"avatar/internal/retry"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Consumer struct {
 	client    *Client
 	processor *processor.ImageProcessor
 	log       *logger.Logger
+	kit       observability.Kit
 }
 
-func NewConsumer(cfg config.RabbitMQConfig, imageProcessor *processor.ImageProcessor, log *logger.Logger) (*Consumer, error) {
+type messageHandler func(ctx context.Context, delivery amqp.Delivery) error
+
+func NewConsumer(
+	cfg config.RabbitMQConfig,
+	imageProcessor *processor.ImageProcessor,
+	log *logger.Logger,
+	kit observability.Kit,
+) (*Consumer, error) {
 	client, err := NewClient(cfg)
 	if err != nil {
 		return nil, err
@@ -27,6 +38,7 @@ func NewConsumer(cfg config.RabbitMQConfig, imageProcessor *processor.ImageProce
 		client:    client,
 		processor: imageProcessor,
 		log:       log,
+		kit:       kit,
 	}, nil
 }
 
@@ -51,8 +63,6 @@ func (consumer *Consumer) Run(ctx context.Context) error {
 	}
 }
 
-type messageHandler func(ctx context.Context, body []byte) error
-
 func (consumer *Consumer) consume(ctx context.Context, queue string, handler messageHandler) error {
 	deliveries, err := consumer.client.channel.Consume(
 		queue,
@@ -75,19 +85,31 @@ func (consumer *Consumer) consume(ctx context.Context, queue string, handler mes
 			if !ok {
 				return fmt.Errorf("delivery channel closed for queue %q", queue)
 			}
-			if err := handler(ctx, delivery.Body); err != nil {
-				consumer.log.Error("message processing failed", "queue", queue, "error", err)
+			status := "success"
+			msgCtx := extractTraceContext(ctx, delivery.Headers)
+			err := consumer.kit.Run(msgCtx, "rabbitmq.consume", func(ctx context.Context) error {
+				return handler(ctx, delivery)
+			},
+				observability.String("messaging.system", "rabbitmq"),
+				observability.String("messaging.destination", queue),
+				observability.String("messaging.message_id", delivery.MessageId),
+			)
+			if err != nil {
+				status = "error"
+				consumer.log.Error(msgCtx, "message processing failed", "queue", queue, "error", err)
 				_ = delivery.Nack(false, false)
-				continue
+			} else {
+				_ = delivery.Ack(false)
 			}
-			_ = delivery.Ack(false)
+
+			consumer.kit.Metrics().RecordRabbitMQConsumed(msgCtx, queue, status)
 		}
 	}
 }
 
-func (consumer *Consumer) handleUpload(ctx context.Context, body []byte) error {
+func (consumer *Consumer) handleUpload(ctx context.Context, delivery amqp.Delivery) error {
 	var event model.AvatarUploadEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
 		return fmt.Errorf("decode upload event: %w", err)
 	}
 	return consumer.process(ctx, event.AvatarID, func() error {
@@ -95,9 +117,9 @@ func (consumer *Consumer) handleUpload(ctx context.Context, body []byte) error {
 	})
 }
 
-func (consumer *Consumer) handleDelete(ctx context.Context, body []byte) error {
+func (consumer *Consumer) handleDelete(ctx context.Context, delivery amqp.Delivery) error {
 	var event model.AvatarDeleteEvent
-	if err := json.Unmarshal(body, &event); err != nil {
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
 		return fmt.Errorf("decode delete event: %w", err)
 	}
 	return consumer.process(ctx, event.AvatarID, func() error {
@@ -107,7 +129,12 @@ func (consumer *Consumer) handleDelete(ctx context.Context, body []byte) error {
 
 func (consumer *Consumer) process(ctx context.Context, avatarID string, fn func() error) error {
 	return retry.WithBackoff(ctx, retry.DefaultMaxAttempts, fn, func(attempt int, err error) {
-		consumer.log.Warn("processing failed", "avatar_id", avatarID, "attempt", attempt, "error", err)
+		consumer.kit.AddEvent(ctx, "retry",
+			observability.Int("attempt", attempt),
+			observability.String("error", err.Error()),
+			observability.String("avatar_id", avatarID),
+		)
+		consumer.log.Warn(ctx, "processing failed", "avatar_id", avatarID, "attempt", attempt, "error", err)
 	})
 }
 

@@ -7,20 +7,22 @@ import (
 
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
+	"avatar/internal/observability"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Publisher struct {
 	client *Client
+	kit    observability.Kit
 }
 
-func NewPublisher(cfg config.RabbitMQConfig) (*Publisher, error) {
+func NewPublisher(cfg config.RabbitMQConfig, kit observability.Kit) (*Publisher, error) {
 	client, err := NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Publisher{client: client}, nil
+	return &Publisher{client: client, kit: kit}, nil
 }
 
 func (publisher *Publisher) PublishUploadEvent(ctx context.Context, event model.AvatarUploadEvent) error {
@@ -32,24 +34,42 @@ func (publisher *Publisher) PublishDeleteEvent(ctx context.Context, event model.
 }
 
 func (publisher *Publisher) publish(ctx context.Context, routingKey, messageID string, payload any) error {
-	body, err := json.Marshal(payload)
+	status := "success"
+
+	err := publisher.kit.Run(ctx, "rabbitmq.publish", func(ctx context.Context) error {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal event: %w", err)
+		}
+
+		headers := amqp.Table{}
+		injectTraceContext(ctx, headers)
+
+		return publisher.client.channel.PublishWithContext(
+			ctx,
+			publisher.client.exchange,
+			routingKey,
+			false,
+			false,
+			amqp.Publishing{
+				ContentType:  "application/json",
+				DeliveryMode: amqp.Persistent,
+				MessageId:    messageID,
+				Body:         body,
+				Headers:      headers,
+			},
+		)
+	},
+		observability.String("messaging.system", "rabbitmq"),
+		observability.String("messaging.destination", routingKey),
+		observability.String("messaging.message_id", messageID),
+	)
 	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
+		status = "error"
 	}
 
-	return publisher.client.channel.PublishWithContext(
-		ctx,
-		publisher.client.exchange,
-		routingKey,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType:  "application/json",
-			DeliveryMode: amqp.Persistent,
-			MessageId:    messageID,
-			Body:         body,
-		},
-	)
+	publisher.kit.Metrics().RecordRabbitMQPublished(ctx, routingKey, status)
+	return err
 }
 
 func (publisher *Publisher) Ping(ctx context.Context) error {

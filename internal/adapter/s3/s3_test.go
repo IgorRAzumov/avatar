@@ -7,6 +7,7 @@ import (
 	"avatar/internal/adapter/s3"
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
+	"avatar/internal/observability"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,7 @@ func startMinIO(t *testing.T) *s3.Storage {
 		Bucket:    "avatars",
 		UseSSL:    false,
 		Region:    "us-east-1",
-	})
+	}, observability.NewTestKit())
 	if err != nil {
 		t.Skipf("minio not available: %v", err)
 	}

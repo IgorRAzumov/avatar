@@ -79,6 +79,10 @@ func (usecase *Usecase) ListByUser(ctx context.Context, userID string) ([]*model
 	return usecase.readRepository.ListByUserID(ctx, userID)
 }
 
+func (usecase *Usecase) GetLatestByUser(ctx context.Context, userID string) (*model.Avatar, error) {
+	return usecase.readRepository.GetLatestByUserID(ctx, userID)
+}
+
 func (usecase *Usecase) GetUserAvatarImage(ctx context.Context, userID, size, format string) (*model.AvatarImage, error) {
 	avatar, err := usecase.readRepository.GetLatestByUserID(ctx, userID)
 	if err != nil {

@@ -118,3 +118,55 @@ golangci-lint run ./...
 ```
 
 Конфигурация — `.golangci.yml`.
+
+## Observability
+
+Стек поднимается вместе с `docker compose up --build`. Приложение экспортирует traces, logs и metrics через **OTLP** в **OpenTelemetry Collector**, который маршрутизирует данные дальше.
+
+```
+server / worker ──OTLP──→ otel-collector ──→ Jaeger (traces)
+                                        ──→ OpenSearch (logs)
+                                        ──→ Prometheus (metrics)
+```
+
+| UI | URL | Логин |
+|----|-----|-------|
+| Grafana | http://localhost:3000 | admin / admin |
+| Jaeger | http://localhost:16686 | — |
+| Prometheus | http://localhost:9090 | — |
+| OpenSearch Dashboards | http://localhost:5601 | — |
+
+Grafana dashboards (папка **Avatar Service**):
+- **Avatar Service Overview** — метрики (HTTP, uploads, processing, DB, RabbitMQ, S3)
+- **Avatar Service Logs** — логи из OpenSearch, фильтр по Trace ID
+
+### Переменные окружения
+
+См. `.env.example`. По умолчанию observability **включена** (`OTEL_*_ENABLED=true`).
+
+Для worker задайте отдельное имя сервиса:
+
+```bash
+OTEL_SERVICE_NAME=avatar-service-worker go run ./cmd/worker
+```
+
+В `docker-compose.yml` для worker уже указано `OTEL_SERVICE_NAME=avatar-service-worker`.
+
+### Поиск логов
+
+**Grafana → Avatar Service Logs** — введите Trace ID из Jaeger в переменную шаблона.
+
+**OpenSearch Dashboards** — index pattern `avatar-logs*`, примеры запросов:
+
+```
+trace.id: "<trace_id из Jaeger>"
+service.name: "avatar-service"
+log.level: "error"
+```
+
+### Проверка end-to-end
+
+1. Upload аватара через API или `/web/upload`
+2. **Grafana** — растут панели Uploads / Request Rate
+3. **Jaeger** — trace от HTTP до worker `process_upload`
+4. **Grafana Logs** или **OpenSearch** — лог с тем же `trace.id`

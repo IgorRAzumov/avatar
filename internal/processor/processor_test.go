@@ -9,6 +9,7 @@ import (
 	"avatar/internal/domain/model"
 	"avatar/internal/imageformat"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 	"avatar/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,7 @@ import (
 func TestImageProcessorProcessUpload(t *testing.T) {
 	repo := testutil.NewMemoryAvatarStore()
 	store := testutil.NewMemoryStorage()
-	proc := NewImageProcessor(repo, repo, store)
+	proc := NewImageProcessor(repo, repo, store, observability.NewTestKit())
 
 	data := testutil.JPEG(300, 200)
 
@@ -47,7 +48,7 @@ func TestImageProcessorProcessUpload(t *testing.T) {
 
 func TestImageProcessorSkipsCompletedAvatar(t *testing.T) {
 	repo := testutil.NewMemoryAvatarStore()
-	proc := NewImageProcessor(repo, repo, testutil.NewMemoryStorage())
+	proc := NewImageProcessor(repo, repo, testutil.NewMemoryStorage(), observability.NewTestKit())
 
 	avatar := &model.Avatar{
 		UserID:           "user@test.com",
@@ -64,8 +65,8 @@ func TestImageProcessorSkipsCompletedAvatar(t *testing.T) {
 func TestAsyncPublisherPublishDeleteEvent(t *testing.T) {
 	store := testutil.NewMemoryStorage()
 	require.NoError(t, store.SaveOriginal(context.Background(), "avatar-1", []byte("a"), "text/plain"))
-	proc := NewImageProcessor(nil, nil, store)
-	p := NewAsyncPublisher(proc, logger.Nop())
+	proc := NewImageProcessor(nil, nil, store, observability.NewTestKit())
+	p := NewAsyncPublisher(proc, logger.Nop(), observability.NewTestKit())
 
 	require.NoError(t, p.PublishDeleteEvent(context.Background(), model.AvatarDeleteEvent{
 		AvatarID: "avatar-1",
@@ -80,7 +81,7 @@ func TestAsyncPublisherPublishDeleteEvent(t *testing.T) {
 func TestAsyncPublisherPublishUploadEventSurvivesParentCancellation(t *testing.T) {
 	repo := testutil.NewMemoryAvatarStore()
 	store := testutil.NewMemoryStorage()
-	p := NewAsyncPublisher(NewImageProcessor(repo, repo, store), logger.Nop())
+	p := NewAsyncPublisher(NewImageProcessor(repo, repo, store, observability.NewTestKit()), logger.Nop(), observability.NewTestKit())
 
 	data := testutil.JPEG(120, 90)
 	avatar := &model.Avatar{
@@ -109,7 +110,7 @@ func TestAsyncPublisherPublishUploadEventSurvivesParentCancellation(t *testing.T
 func TestAsyncPublisherPublishUploadEvent(t *testing.T) {
 	repo := testutil.NewMemoryAvatarStore()
 	store := testutil.NewMemoryStorage()
-	p := NewAsyncPublisher(NewImageProcessor(repo, repo, store), logger.Nop())
+	p := NewAsyncPublisher(NewImageProcessor(repo, repo, store, observability.NewTestKit()), logger.Nop(), observability.NewTestKit())
 
 	data := testutil.JPEG(120, 90)
 	avatar := &model.Avatar{

@@ -16,6 +16,7 @@ import (
 	"avatar/internal/domain/model"
 	"avatar/internal/imageformat"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 	"avatar/internal/processor"
 	"avatar/internal/testutil"
 
@@ -60,7 +61,7 @@ func TestRepositoryCreateAndGet(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, avatarpg.RunMigrations(ctx, pool, avatarpg.Migrations()))
 
-	repo := repository.NewPostgresAvatarStore(pool)
+	repo := repository.NewPostgresAvatarStore(pool, observability.NewTestKit())
 	avatar := &model.Avatar{
 		UserID:           "user@test.com",
 		FileName:         "photo.jpg",
@@ -89,8 +90,8 @@ func TestServiceUploadFlow(t *testing.T) {
 
 	store := testutil.NewMemoryStorage()
 
-	repo := repository.NewPostgresAvatarStore(pool)
-	proc := processor.NewAsyncImageResizerProcessor(repo, repo, store, logger.Nop())
+	repo := repository.NewPostgresAvatarStore(pool, observability.NewTestKit())
+	proc := processor.NewAsyncImageResizerProcessor(repo, repo, store, logger.Nop(), observability.NewTestKit())
 	query := read.NewReadUsecase(repo, store)
 	command := write.NewWriteUsecase(repo, repo, store, proc, config.DefaultMaxUploadBytes())
 

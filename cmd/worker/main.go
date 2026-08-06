@@ -1,31 +1,34 @@
 package main
 
 import (
+	"avatar/cmd"
 	"context"
-	"os"
+	"errors"
 	"os/signal"
 	"syscall"
 
+	"avatar/internal/app"
 	"avatar/internal/config"
-	"avatar/internal/logger"
 	"avatar/internal/worker"
 )
 
 func main() {
-	log := logger.New(os.Stdout)
 	cfg, err := config.Load()
 	if err != nil {
-		log.Error("config error", "error", err)
-		os.Exit(1)
+		cmd.ExitWithLog(nil, err)
 	}
+
+	log, runtime, err := app.InitApp(cfg, cfg.Observability.ServiceName)
+	if err != nil {
+		cmd.ExitWithLog(nil, err)
+	}
+	defer func() { cmd.ShutdownRuntime(runtime) }()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := worker.Run(ctx, log, cfg); err != nil && err != context.Canceled {
-		log.Error("worker error", "error", err)
-		os.Exit(1)
+	if err := worker.Run(ctx, log, cfg, runtime.Kit); err != nil && !errors.Is(err, context.Canceled) {
+		cmd.ShutdownRuntime(runtime)
+		cmd.ExitWithLog(log, err)
 	}
-
-	log.Info("worker stopped")
 }

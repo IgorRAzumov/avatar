@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,7 +16,7 @@ import (
 
 func TestRequestLogger(t *testing.T) {
 	var buf bytes.Buffer
-	log := logger.New(&buf)
+	log := logger.New(&buf, slog.LevelInfo)
 
 	called := false
 	handler := middleware.RequestLogger(log)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
