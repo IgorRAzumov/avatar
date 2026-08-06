@@ -18,7 +18,7 @@ func main() {
 	}
 	defer func() { cmd.ShutdownRuntime(runtime) }()
 
-	if err := app.Run(log, cfg); err != nil {
+	if err := app.Run(log, cfg, runtime.Kit); err != nil {
 		cmd.ShutdownRuntime(runtime)
 		cmd.ExitWithLog(log, err)
 	}

@@ -22,7 +22,7 @@ func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) e
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("server started", "addr", server.Addr)
+		log.Info(context.Background(), "server started", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -34,18 +34,18 @@ func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) e
 	var serveErr error
 	select {
 	case <-stop:
-		log.Info("server shutting down")
+		log.Info(context.Background(), "server shutting down")
 	case err := <-errCh:
-		log.Error("server error", "error", err)
+		log.Error(context.Background(), "server error", "error", err)
 		serveErr = err
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), config.DefaultShutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error("shutdown error", "error", err)
+		log.Error(context.Background(), "shutdown error", "error", err)
 		return err
 	}
-	log.Info("server stopped")
+	log.Info(context.Background(), "server stopped")
 	return serveErr
 }

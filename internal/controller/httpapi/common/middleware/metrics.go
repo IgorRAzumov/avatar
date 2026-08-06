@@ -11,22 +11,24 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func PrometheusMetrics(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if ShouldSkipObservability(request.URL.Path) {
-			next.ServeHTTP(writer, request)
-			return
-		}
+func PrometheusMetrics(kit observability.Kit) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if ShouldSkipObservability(request.URL.Path) {
+				next.ServeHTTP(writer, request)
+				return
+			}
 
-		start := time.Now()
-		wrapResponseWriter := middleware.NewWrapResponseWriter(writer, request.ProtoMajor)
-		next.ServeHTTP(wrapResponseWriter, request)
+			start := time.Now()
+			wrapResponseWriter := middleware.NewWrapResponseWriter(writer, request.ProtoMajor)
+			next.ServeHTTP(wrapResponseWriter, request)
 
-		status := strconv.Itoa(wrapResponseWriter.Status())
-		path := routePattern(request)
+			status := strconv.Itoa(wrapResponseWriter.Status())
+			path := routePattern(request)
 
-		observability.RecordHTTPRequest(request.Method, path, status, time.Since(start))
-	})
+			kit.Metrics().RecordHTTPRequest(request.Context(), request.Method, path, status, time.Since(start))
+		})
+	}
 }
 
 func routePattern(request *http.Request) string {

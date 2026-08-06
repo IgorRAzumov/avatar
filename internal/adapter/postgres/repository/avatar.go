@@ -14,27 +14,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type PostgresAvatarStore struct {
-	pool           *pgxpool.Pool
-	metricsCleanup func()
+	pool *pgxpool.Pool
+	kit  observability.Kit
 }
 
-func NewPostgresAvatarStore(pool *pgxpool.Pool) *PostgresAvatarStore {
-	return &PostgresAvatarStore{pool: pool}
-}
-
-func (store *PostgresAvatarStore) SetMetricsCleanup(cleanup func()) {
-	store.metricsCleanup = cleanup
+func NewPostgresAvatarStore(pool *pgxpool.Pool, kit observability.Kit) *PostgresAvatarStore {
+	return &PostgresAvatarStore{pool: pool, kit: kit}
 }
 
 func (store *PostgresAvatarStore) Close() {
-	if store.metricsCleanup != nil {
-		store.metricsCleanup()
-		store.metricsCleanup = nil
-	}
 	if store.pool != nil {
 		store.pool.Close()
 	}
@@ -63,7 +54,7 @@ func (store *PostgresAvatarStore) Create(ctx context.Context, avatar *model.Avat
 			avatar.UploadStatus, avatar.ProcessingStatus,
 			avatar.Width, avatar.Height,
 		).Scan(&avatar.CreatedAt, &avatar.UpdatedAt)
-	}, attribute.String("user_id", avatar.UserID))
+	}, observability.String("user_id", avatar.UserID))
 }
 
 func (store *PostgresAvatarStore) GetByID(ctx context.Context, id string) (*model.Avatar, error) {
@@ -81,7 +72,7 @@ func (store *PostgresAvatarStore) GetByID(ctx context.Context, id string) (*mode
 		}
 		avatar = result
 		return nil
-	}, attribute.String("avatar_id", id))
+	}, observability.String("avatar_id", id))
 	return avatar, err
 }
 
@@ -102,7 +93,7 @@ func (store *PostgresAvatarStore) GetLatestByUserID(ctx context.Context, userID 
 		}
 		avatar = result
 		return nil
-	}, attribute.String("user_id", userID))
+	}, observability.String("user_id", userID))
 	return avatar, err
 }
 
@@ -130,7 +121,7 @@ func (store *PostgresAvatarStore) ListByUserID(ctx context.Context, userID strin
 			avatars = append(avatars, a)
 		}
 		return rows.Err()
-	}, attribute.String("user_id", userID))
+	}, observability.String("user_id", userID))
 	return avatars, err
 }
 
@@ -179,7 +170,7 @@ func (store *PostgresAvatarStore) SoftDelete(ctx context.Context, id string) err
 			return model.ErrNotFound
 		}
 		return nil
-	}, attribute.String("avatar_id", id))
+	}, observability.String("avatar_id", id))
 }
 
 func (store *PostgresAvatarStore) UpdateProcessingStatus(ctx context.Context, id, status string) error {
@@ -187,7 +178,7 @@ func (store *PostgresAvatarStore) UpdateProcessingStatus(ctx context.Context, id
 		query := `UPDATE avatars SET processing_status = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
 		_, err := store.pool.Exec(ctx, query, id, status)
 		return err
-	}, attribute.String("avatar_id", id), attribute.String("status", status))
+	}, observability.String("avatar_id", id), observability.String("status", status))
 }
 
 func (store *PostgresAvatarStore) CompleteProcessing(ctx context.Context, id string, width, height int) error {
@@ -204,19 +195,16 @@ func (store *PostgresAvatarStore) CompleteProcessing(ctx context.Context, id str
 
 		_, err = store.pool.Exec(ctx, query, id, thumbsJSON, model.ProcessingStatusCompleted, width, height)
 		return err
-	}, attribute.String("avatar_id", id))
+	}, observability.String("avatar_id", id))
 }
 
 func (store *PostgresAvatarStore) withSpan(
 	ctx context.Context,
 	operation string,
 	fn func(context.Context) error,
-	attrs ...attribute.KeyValue,
+	attrs ...observability.Attr,
 ) error {
-	start := time.Now()
-	err := observability.Run(ctx, operation, fn, attrs...)
-	observability.RecordDBQuery(operation, time.Since(start))
-	return err
+	return store.kit.RunDB(ctx, operation, fn, attrs...)
 }
 
 func thumbnailKeysForDB(avatarID string) map[string]string {

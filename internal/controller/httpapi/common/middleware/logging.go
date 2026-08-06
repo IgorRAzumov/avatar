@@ -22,23 +22,23 @@ func RequestLogger(logger *logger.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(wrapResponseWriter, request)
 
 			status := wrapResponseWriter.Status()
-			log := logger.WithContext(request.Context())
+			ctx := request.Context()
 			args := []any{
 				"method", request.Method,
 				"path", routePattern(request),
 				"status", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 			}
-			if requestID := middleware.GetReqID(request.Context()); requestID != "" {
+			if requestID := middleware.GetReqID(ctx); requestID != "" {
 				args = append(args, "request_id", requestID)
 			}
 
 			if status >= 500 {
-				log.Error("request", args...)
+				logger.Error(ctx, "request", args...)
 			} else if status >= 400 {
-				log.Warn("request", args...)
+				logger.Warn(ctx, "request", args...)
 			} else {
-				log.Info("request", args...)
+				logger.Info(ctx, "request", args...)
 			}
 		})
 	}

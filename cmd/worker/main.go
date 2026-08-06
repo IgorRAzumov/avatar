@@ -29,7 +29,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := worker.Run(ctx, log, cfg); err != nil && !errors.Is(err, context.Canceled) {
+	if err := worker.Run(ctx, log, cfg, runtime.Kit); err != nil && !errors.Is(err, context.Canceled) {
 		cmd.ShutdownRuntime(runtime)
 		cmd.ExitWithLog(log, err)
 	}

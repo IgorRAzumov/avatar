@@ -18,7 +18,7 @@ func TestLoggerWritesJSON(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(&buf, slog.LevelInfo)
 
-	log.Info("hello", "key", "value")
+	log.Info(context.Background(), "hello", "key", "value")
 
 	out := buf.String()
 	assert.True(t, strings.Contains(out, "hello"))
@@ -30,9 +30,9 @@ func TestLoggerLevels(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(&buf, slog.LevelDebug)
 
-	log.Info("i")
-	log.Warn("w")
-	log.Error("e")
+	log.Info(context.Background(), "i")
+	log.Warn(context.Background(), "w")
+	log.Error(context.Background(), "e")
 
 	out := buf.String()
 	assert.Contains(t, out, "\"i\"")
@@ -43,13 +43,13 @@ func TestLoggerLevels(t *testing.T) {
 func TestNopLoggerDoesNotPanic(t *testing.T) {
 	log := logger.Nop()
 	assert.NotPanics(t, func() {
-		log.Info("i")
-		log.Warn("w")
-		log.Error("e")
+		log.Info(context.Background(), "i")
+		log.Warn(context.Background(), "w")
+		log.Error(context.Background(), "e")
 	})
 }
 
-func TestWithContextAddsTraceFields(t *testing.T) {
+func TestContextAddsTraceFields(t *testing.T) {
 	provider := sdktrace.NewTracerProvider()
 	otel.SetTracerProvider(provider)
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
@@ -60,7 +60,7 @@ func TestWithContextAddsTraceFields(t *testing.T) {
 	ctx, span := otel.Tracer("test").Start(context.Background(), "test-span")
 	defer span.End()
 
-	log.WithContext(ctx).Info("correlated")
+	log.Info(ctx, "correlated")
 
 	out := buf.String()
 	assert.Contains(t, out, "trace_id")

@@ -12,7 +12,6 @@ import (
 
 type Logger struct {
 	log *slog.Logger
-	ctx context.Context
 }
 
 type Option func(*loggerOptions)
@@ -48,51 +47,37 @@ func Nop() *Logger {
 	return &Logger{log: slog.New(slog.DiscardHandler)}
 }
 
-func (logger *Logger) Info(msg string, args ...any) {
-	logger.logWithContext(slog.LevelInfo, msg, args...)
+func (logger *Logger) Info(ctx context.Context, msg string, args ...any) {
+	logger.logAt(ctx, slog.LevelInfo, msg, args...)
 }
 
-func (logger *Logger) Warn(msg string, args ...any) {
-	logger.logWithContext(slog.LevelWarn, msg, args...)
+func (logger *Logger) Warn(ctx context.Context, msg string, args ...any) {
+	logger.logAt(ctx, slog.LevelWarn, msg, args...)
 }
 
-func (logger *Logger) Error(msg string, args ...any) {
-	logger.logWithContext(slog.LevelError, msg, args...)
+func (logger *Logger) Error(ctx context.Context, msg string, args ...any) {
+	logger.logAt(ctx, slog.LevelError, msg, args...)
 }
 
-func (logger *Logger) Debug(msg string, args ...any) {
-	logger.logWithContext(slog.LevelDebug, msg, args...)
+func (logger *Logger) Debug(ctx context.Context, msg string, args ...any) {
+	logger.logAt(ctx, slog.LevelDebug, msg, args...)
 }
 
-func (logger *Logger) logWithContext(level slog.Level, msg string, args ...any) {
-	if logger.ctx != nil {
-		logger.log.Log(logger.ctx, level, msg, args...)
-		return
+func (logger *Logger) logAt(ctx context.Context, level slog.Level, msg string, args ...any) {
+	log := logger.log
+	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
+		spanCtx := span.SpanContext()
+		log = log.With(
+			"trace_id", spanCtx.TraceID().String(),
+			"span_id", spanCtx.SpanID().String(),
+		)
 	}
-	logger.log.Log(context.Background(), level, msg, args...)
-}
-
-// WithContext returns a logger enriched with trace context for stdout JSON and OTLP export.
-func (logger *Logger) WithContext(ctx context.Context) *Logger {
-	span := trace.SpanFromContext(ctx)
-	if !span.SpanContext().IsValid() {
-		return &Logger{log: logger.log, ctx: ctx}
-	}
-
-	spanCtx := span.SpanContext()
-	enrichedLog := logger.log.With(
-		"trace_id", spanCtx.TraceID().String(),
-		"span_id", spanCtx.SpanID().String(),
-	)
-	return &Logger{log: enrichedLog, ctx: ctx}
+	log.Log(ctx, level, msg, args...)
 }
 
 // WithService returns a logger with a static service attribute.
 func (logger *Logger) WithService(service string) *Logger {
-	return &Logger{
-		log: logger.log.With("service", service),
-		ctx: logger.ctx,
-	}
+	return &Logger{log: logger.log.With("service", service)}
 }
 
 type multiHandler struct {

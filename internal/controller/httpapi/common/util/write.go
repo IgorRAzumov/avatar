@@ -42,7 +42,7 @@ func WriteServiceError(ctx context.Context, logger *logger.Logger, w http.Respon
 			MaxSize: maxSize,
 		})
 	default:
-		logger.WithContext(ctx).Error("request failed", "error", err)
+		logger.Error(ctx, "request failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, commonmodel.ErrorResponse{Error: commonmodel.MsgInternalServerError})
 	}
 }

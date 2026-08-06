@@ -8,8 +8,6 @@ import (
 	"avatar/internal/domain/repository"
 	"avatar/internal/imageutil"
 	"avatar/internal/observability"
-
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type ImageProcessor struct {
@@ -17,18 +15,21 @@ type ImageProcessor struct {
 	writeRepository repository.WriteRepository
 	filesRepository repository.FilesRepository
 	resizer         *imageutil.Resizer
+	kit             observability.Kit
 }
 
 func NewImageProcessor(
 	readRepository repository.ReadRepository,
 	writeRepository repository.WriteRepository,
 	files repository.FilesRepository,
+	kit observability.Kit,
 ) *ImageProcessor {
 	return &ImageProcessor{
 		readRepository:  readRepository,
 		writeRepository: writeRepository,
 		filesRepository: files,
 		resizer:         imageutil.NewResizer(),
+		kit:             kit,
 	}
 }
 
@@ -36,10 +37,10 @@ func (processor *ImageProcessor) ProcessUpload(ctx context.Context, event model.
 	start := time.Now()
 	status := "success"
 	defer func() {
-		observability.RecordProcessing("upload", status, time.Since(start))
+		processor.kit.Metrics().RecordProcessing(ctx, "upload", status, time.Since(start))
 	}()
 
-	err := observability.Run(ctx, "process_upload", func(ctx context.Context) error {
+	err := processor.kit.Run(ctx, "process_upload", func(ctx context.Context) error {
 		avatar, err := processor.readRepository.GetByID(ctx, event.AvatarID)
 		if err != nil {
 			return err
@@ -61,9 +62,9 @@ func (processor *ImageProcessor) ProcessUpload(ctx context.Context, event model.
 		}
 
 		width, height, _ := processor.resizer.Dimensions(image)
-		observability.SetAttributes(ctx,
-			attribute.Int("image.width", width),
-			attribute.Int("image.height", height),
+		processor.kit.SetAttributes(ctx,
+			observability.Int("image.width", width),
+			observability.Int("image.height", height),
 		)
 
 		for _, size := range model.ThumbnailSizes {
@@ -80,8 +81,8 @@ func (processor *ImageProcessor) ProcessUpload(ctx context.Context, event model.
 
 		return processor.writeRepository.CompleteProcessing(ctx, event.AvatarID, width, height)
 	},
-		attribute.String("avatar_id", event.AvatarID),
-		attribute.String("user_id", event.UserID),
+		observability.String("avatar_id", event.AvatarID),
+		observability.String("user_id", event.UserID),
 	)
 	if err != nil {
 		status = "error"
@@ -93,12 +94,12 @@ func (processor *ImageProcessor) ProcessDelete(ctx context.Context, event model.
 	start := time.Now()
 	status := "success"
 	defer func() {
-		observability.RecordProcessing("delete", status, time.Since(start))
+		processor.kit.Metrics().RecordProcessing(ctx, "delete", status, time.Since(start))
 	}()
 
-	err := observability.Run(ctx, "process_delete", func(ctx context.Context) error {
+	err := processor.kit.Run(ctx, "process_delete", func(ctx context.Context) error {
 		return processor.filesRepository.DeleteAll(ctx, event.AvatarID)
-	}, attribute.String("avatar_id", event.AvatarID))
+	}, observability.String("avatar_id", event.AvatarID))
 	if err != nil {
 		status = "error"
 	}

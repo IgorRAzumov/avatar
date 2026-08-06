@@ -24,7 +24,7 @@ func TestRunRecordsError(t *testing.T) {
 	t.Cleanup(func() { _ = runtime.Shutdown(context.Background()) })
 
 	testErr := errors.New("boom")
-	err = observability.Run(context.Background(), "test.run", func(context.Context) error {
+	err = runtime.Kit.Run(context.Background(), "test.run", func(context.Context) error {
 		return testErr
 	})
 	assert.ErrorIs(t, err, testErr)
@@ -42,7 +42,7 @@ func TestRunResultReturnsValue(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = runtime.Shutdown(context.Background()) })
 
-	value, err := observability.RunResult(context.Background(), "test.run_result", func(context.Context) (string, error) {
+	value, err := observability.RunResult(runtime.Kit, context.Background(), "test.run_result", func(context.Context) (string, error) {
 		return "ok", nil
 	})
 	require.NoError(t, err)

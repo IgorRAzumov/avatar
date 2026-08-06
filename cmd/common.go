@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"avatar/internal/logger"
-	"avatar/internal/observability"
+	"context"
 	"os"
 
-	"golang.org/x/net/context"
+	"avatar/internal/logger"
+	"avatar/internal/observability"
 )
 
 func ShutdownRuntime(runtime *observability.Runtime) {
@@ -20,7 +20,7 @@ func ShutdownRuntime(runtime *observability.Runtime) {
 func ExitWithLog(log *logger.Logger, err error) {
 	if err != nil {
 		if log != nil {
-			log.Error("application error", "error", err)
+			log.Error(context.Background(), "application error", "error", err)
 		} else {
 			_, _ = os.Stderr.WriteString("application error: " + err.Error() + "\n")
 		}

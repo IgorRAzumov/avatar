@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"avatar/internal/adapter/objectkey"
 	"avatar/internal/config"
@@ -14,15 +13,15 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type Storage struct {
 	client *minio.Client
 	bucket string
+	kit    observability.Kit
 }
 
-func NewStorage(cfg config.S3Config) (*Storage, error) {
+func NewStorage(cfg config.S3Config, kit observability.Kit) (*Storage, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
@@ -32,7 +31,7 @@ func NewStorage(cfg config.S3Config) (*Storage, error) {
 		return nil, fmt.Errorf("create s3 client: %w", err)
 	}
 
-	return &Storage{client: client, bucket: cfg.Bucket}, nil
+	return &Storage{client: client, bucket: cfg.Bucket, kit: kit}, nil
 }
 
 func (storage *Storage) upload(ctx context.Context, key string, data []byte, contentType string) error {
@@ -54,7 +53,7 @@ func (storage *Storage) upload(ctx context.Context, key string, data []byte, con
 			return fmt.Errorf("upload object: %w", err)
 		}
 		return nil
-	}, attribute.String("s3.key", key), attribute.Int("s3.size_bytes", len(data)))
+	}, observability.String("s3.key", key), observability.Int("s3.size_bytes", len(data)))
 }
 
 func (storage *Storage) download(ctx context.Context, key string) ([]byte, error) {
@@ -79,7 +78,7 @@ func (storage *Storage) download(ctx context.Context, key string) ([]byte, error
 		}
 		result = data
 		return nil
-	}, attribute.String("s3.key", key))
+	}, observability.String("s3.key", key))
 	return result, err
 }
 
@@ -87,18 +86,9 @@ func (storage *Storage) withSpan(
 	ctx context.Context,
 	spanName, operation string,
 	fn func(context.Context) error,
-	attrs ...attribute.KeyValue,
+	attrs ...observability.Attr,
 ) error {
-	start := time.Now()
-	status := "success"
-
-	err := observability.Run(ctx, spanName, fn, attrs...)
-	if err != nil {
-		status = "error"
-	}
-
-	observability.RecordS3Operation(operation, status, time.Since(start))
-	return err
+	return storage.kit.RunS3(ctx, spanName, operation, fn, attrs...)
 }
 
 func isNotFound(err error) bool {
@@ -137,7 +127,7 @@ func (storage *Storage) DeleteAll(ctx context.Context, avatarID string) error {
 			}
 		}
 		return nil
-	}, attribute.String("avatar_id", avatarID))
+	}, observability.String("avatar_id", avatarID))
 }
 
 func (storage *Storage) Ping(ctx context.Context) error {

@@ -34,6 +34,7 @@ type Config struct {
 type Runtime struct {
 	Shutdown    func(context.Context) error
 	LogProvider *log.LoggerProvider
+	Kit         Kit
 }
 
 func Init(ctx context.Context, cfg Config) (Runtime, error) {
@@ -42,10 +43,16 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		propagation.Baggage{},
 	))
 
+	traceProvider := sdktrace.NewTracerProvider()
+	meterProvider := sdkmetric.NewMeterProvider()
+	otel.SetTracerProvider(traceProvider)
+	otel.SetMeterProvider(meterProvider)
+
 	if !cfg.TracingEnabled && !cfg.LogsEnabled && !cfg.MetricsEnabled {
-		otel.SetTracerProvider(sdktrace.NewTracerProvider())
-		otel.SetMeterProvider(sdkmetric.NewMeterProvider())
-		return Runtime{Shutdown: func(context.Context) error { return nil }}, nil
+		return Runtime{
+			Shutdown: func(context.Context) error { return nil },
+			Kit:      NewOTelKit(traceProvider.Tracer(TracerName), NopRecorder),
+		}, nil
 	}
 
 	res, err := resource.New(ctx,
@@ -64,11 +71,7 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		return Runtime{}, fmt.Errorf("create otel resource: %w", err)
 	}
 
-	var (
-		traceProvider *sdktrace.TracerProvider
-		logProvider   *log.LoggerProvider
-		meterProvider *sdkmetric.MeterProvider
-	)
+	var logProvider *log.LoggerProvider
 
 	if cfg.TracingEnabled {
 		traceExporter, err := otlptracegrpc.New(ctx,
@@ -85,8 +88,6 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 			sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.TraceSampleRatio))),
 		)
 		otel.SetTracerProvider(traceProvider)
-	} else {
-		otel.SetTracerProvider(sdktrace.NewTracerProvider())
 	}
 
 	if cfg.LogsEnabled {
@@ -104,6 +105,7 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		)
 	}
 
+	var metrics Recorder
 	if cfg.MetricsEnabled {
 		metricExporter, err := otlpmetricgrpc.New(ctx,
 			otlpmetricgrpc.WithEndpoint(cfg.OTLPEndpoint),
@@ -119,11 +121,10 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		)
 		otel.SetMeterProvider(meterProvider)
 
-		if err := InitMetrics(); err != nil {
+		metrics, err = NewMetrics(meterProvider.Meter(TracerName))
+		if err != nil {
 			return Runtime{}, fmt.Errorf("init metrics instruments: %w", err)
 		}
-	} else {
-		otel.SetMeterProvider(sdkmetric.NewMeterProvider())
 	}
 
 	shutdown := func(shutdownCtx context.Context) error {
@@ -131,20 +132,17 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		defer cancel()
 
 		var shutdownErr error
-		if traceProvider != nil {
-			shutdownErr = errors.Join(shutdownErr, traceProvider.Shutdown(shutdownCtx))
-		}
+		shutdownErr = errors.Join(shutdownErr, traceProvider.Shutdown(shutdownCtx))
 		if logProvider != nil {
 			shutdownErr = errors.Join(shutdownErr, logProvider.Shutdown(shutdownCtx))
 		}
-		if meterProvider != nil {
-			shutdownErr = errors.Join(shutdownErr, meterProvider.Shutdown(shutdownCtx))
-		}
+		shutdownErr = errors.Join(shutdownErr, meterProvider.Shutdown(shutdownCtx))
 		return shutdownErr
 	}
 
 	return Runtime{
 		Shutdown:    shutdown,
 		LogProvider: logProvider,
+		Kit:         NewOTelKit(traceProvider.Tracer(TracerName), metrics),
 	}, nil
 }

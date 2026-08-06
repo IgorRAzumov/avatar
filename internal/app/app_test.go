@@ -6,6 +6,7 @@ import (
 
 	"avatar/internal/config"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 	"avatar/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ func TestNewFileStoreS3(t *testing.T) {
 		Region:    "us-east-1",
 	}}
 
-	store, err := NewFileStore(cfg)
+	store, err := NewFileStore(cfg, observability.NewTestKit())
 	if err != nil {
 		t.Skipf("minio not available: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestNewPublisherInProcess(t *testing.T) {
 	repo := testutil.NewMemoryAvatarStore()
 	store := testutil.NewMemoryStorage()
 
-	publisher, broker, err := NewPublisher(cfg, repo, repo, store, logger.Nop())
+	publisher, broker, err := NewPublisher(cfg, repo, repo, store, logger.Nop(), observability.NewTestKit())
 	require.NoError(t, err)
 	assert.NotNil(t, publisher)
 	assert.Nil(t, broker)

@@ -30,33 +30,33 @@ func InitApp(cfg *config.Config, serviceName string) (*logger.Logger, *observabi
 	return log, &obs, nil
 }
 
-func Run(log *logger.Logger, appConfig *config.Config) error {
+func Run(log *logger.Logger, appConfig *config.Config, kit observability.Kit) error {
 	serviceLog := log.WithService(appConfig.Observability.ServiceName)
 
-	avatarStore, err := postgres.Open(context.Background(), appConfig.Postgres.DSN)
+	avatarStore, closeStore, err := postgres.Open(context.Background(), appConfig.Postgres.DSN, kit)
 	if err != nil {
 		return err
 	}
-	defer avatarStore.Close()
+	defer closeStore()
 
-	fileStore, err := NewFileStore(appConfig)
+	fileStore, err := NewFileStore(appConfig, kit)
 	if err != nil {
 		return err
 	}
 
-	publisher, broker, err := NewPublisher(appConfig, avatarStore, avatarStore, fileStore, serviceLog)
+	publisher, broker, err := NewPublisher(appConfig, avatarStore, avatarStore, fileStore, serviceLog, kit)
 	if err != nil {
 		return err
 	}
 	if closer, ok := publisher.(interface{ Close() error }); ok {
 		defer func() {
 			if err := closer.Close(); err != nil {
-				serviceLog.Error("close publisher", "error", err)
+				serviceLog.Error(context.Background(), "close publisher", "error", err)
 			}
 		}()
 	}
 
-	return httpapi.StartServer(serviceLog, appConfig, newRouter(appConfig, avatarStore, fileStore, publisher, broker, serviceLog))
+	return httpapi.StartServer(serviceLog, appConfig, newRouter(appConfig, avatarStore, fileStore, publisher, broker, serviceLog, kit))
 }
 
 func initLogger(cfg *config.Config, obs observability.Runtime, serviceName string) *logger.Logger {
@@ -91,9 +91,10 @@ func newRouter(
 	publisher domainrepo.EventPublisherRepository,
 	broker Pinger,
 	log *logger.Logger,
+	kit observability.Kit,
 ) http.Handler {
 	rawRead := domainread.NewReadUsecase(avatarStore, filesStorage)
-	avatarQuery := newInstrumentedReadUsecase(rawRead)
+	avatarQuery := newInstrumentedReadUsecase(rawRead, kit)
 	avatarCommand := newInstrumentedWriteUsecase(
 		domainwrite.NewWriteUsecase(
 			avatarStore,
@@ -103,6 +104,7 @@ func newRouter(
 			cfg.MaxUploadBytes(),
 		),
 		rawRead,
+		kit,
 	)
 	healthChecker := domainhealth.NewChecker(avatarStore, filesStorage, "s3", broker)
 
@@ -111,6 +113,7 @@ func newRouter(
 	return httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:      log,
 		ServiceName: cfg.Observability.ServiceName,
+		Kit:         kit,
 		AvatarRead:  read.New(log, avatarQuery, cfg.Server.BaseURL),
 		AvatarWrite: avatarWrite,
 		Web:         web.New(avatarWrite),

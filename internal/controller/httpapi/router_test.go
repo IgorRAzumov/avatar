@@ -10,6 +10,7 @@ import (
 	"avatar/internal/controller/httpapi/write"
 	domainhealth "avatar/internal/domain/usecase/health"
 	"avatar/internal/logger"
+	"avatar/internal/observability"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ func TestRouterHealthRoute(t *testing.T) {
 	router := NewRouter(RouterDeps{
 		Logger:      logger.Nop(),
 		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
 		Health:      health.New(checker),
 	})
 
@@ -36,6 +38,7 @@ func TestRouterAPIRoutesRegistered(t *testing.T) {
 	router := NewRouter(RouterDeps{
 		Logger:      logger.Nop(),
 		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
 		AvatarWrite: write.New(logger.Nop(), nil, 1024, "http://localhost"),
 		Health:      health.New(checker),
 	})
@@ -51,6 +54,7 @@ func TestRouterWebUploadPage(t *testing.T) {
 	router := NewRouter(RouterDeps{
 		Logger:      logger.Nop(),
 		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
 		AvatarWrite: writeHandler,
 		Web:         web.New(writeHandler),
 	})
