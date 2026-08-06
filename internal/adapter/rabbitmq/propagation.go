@@ -46,3 +46,13 @@ func extractTraceContext(ctx context.Context, headers amqp.Table) context.Contex
 	}
 	return otel.GetTextMapPropagator().Extract(ctx, amqpHeadersCarrier(headers))
 }
+
+// InjectTraceContextForTest exposes trace injection for unit tests.
+func InjectTraceContextForTest(ctx context.Context, headers amqp.Table) {
+	injectTraceContext(ctx, headers)
+}
+
+// ExtractTraceContextForTest exposes trace extraction for unit tests.
+func ExtractTraceContextForTest(ctx context.Context, headers amqp.Table) context.Context {
+	return extractTraceContext(ctx, headers)
+}

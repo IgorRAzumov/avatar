@@ -23,8 +23,8 @@ func TestRegisterDatabaseMetricsObservesSource(t *testing.T) {
 
 	unregister, err := runtime.Kit.RegisterDatabaseMetrics(observability.DatabaseStats{
 		PoolConnections: func() (int64, int64) { return 2, 3 },
-		CountAvatars: func(context.Context) (int64, map[string]int64, error) {
-			return 4, map[string]int64{"user-a": 2, "user-b": 2}, nil
+		CountAvatars: func(context.Context) (int64, error) {
+			return 4, nil
 		},
 	})
 	require.NoError(t, err)
@@ -38,8 +38,8 @@ func TestRegisterDatabaseMetricsNoopWhenMetricsDisabled(t *testing.T) {
 
 	unregister, err := kit.RegisterDatabaseMetrics(observability.DatabaseStats{
 		PoolConnections: func() (int64, int64) { return 1, 1 },
-		CountAvatars: func(context.Context) (int64, map[string]int64, error) {
-			return 1, nil, nil
+		CountAvatars: func(context.Context) (int64, error) {
+			return 1, nil
 		},
 	})
 	require.NoError(t, err)

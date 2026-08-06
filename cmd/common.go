@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"time"
 
 	"avatar/internal/logger"
 	"avatar/internal/observability"
@@ -12,7 +13,9 @@ func ShutdownRuntime(runtime *observability.Runtime) {
 	if runtime == nil {
 		return
 	}
-	if err := runtime.Shutdown(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(ctx); err != nil {
 		_, _ = os.Stderr.WriteString("shutdown observability: " + err.Error() + "\n")
 	}
 }

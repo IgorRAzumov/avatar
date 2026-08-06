@@ -45,36 +45,12 @@ func Open(ctx context.Context, dsn string, kit observability.Kit) (*repository.P
 	return store, closeFn, nil
 }
 
-func countActiveAvatars(pool *pgxpool.Pool) func(context.Context) (int64, map[string]int64, error) {
-	return func(ctx context.Context) (int64, map[string]int64, error) {
+func countActiveAvatars(pool *pgxpool.Pool) func(context.Context) (int64, error) {
+	return func(ctx context.Context) (int64, error) {
 		var total int64
 		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM avatars WHERE deleted_at IS NULL`).Scan(&total); err != nil {
-			return 0, nil, fmt.Errorf("count avatars: %w", err)
+			return 0, fmt.Errorf("count avatars: %w", err)
 		}
-
-		rows, err := pool.Query(ctx, `
-			SELECT user_id, COUNT(*)
-			FROM avatars
-			WHERE deleted_at IS NULL
-			GROUP BY user_id`)
-		if err != nil {
-			return 0, nil, fmt.Errorf("count avatars by user: %w", err)
-		}
-		defer rows.Close()
-
-		byUser := make(map[string]int64)
-		for rows.Next() {
-			var userID string
-			var count int64
-			if err := rows.Scan(&userID, &count); err != nil {
-				return 0, nil, err
-			}
-			byUser[userID] = count
-		}
-		if err := rows.Err(); err != nil {
-			return 0, nil, err
-		}
-
-		return total, byUser, nil
+		return total, nil
 	}
 }

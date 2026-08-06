@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
@@ -65,14 +66,25 @@ func (logger *Logger) Debug(ctx context.Context, msg string, args ...any) {
 
 func (logger *Logger) logAt(ctx context.Context, level slog.Level, msg string, args ...any) {
 	log := logger.log
+	if fields := correlationFields(ctx); len(fields) > 0 {
+		log = log.With(fields...)
+	}
+	log.Log(ctx, level, msg, args...)
+}
+
+func correlationFields(ctx context.Context) []any {
+	fields := make([]any, 0, 6)
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		spanCtx := span.SpanContext()
-		log = log.With(
+		fields = append(fields,
 			"trace_id", spanCtx.TraceID().String(),
 			"span_id", spanCtx.SpanID().String(),
 		)
 	}
-	log.Log(ctx, level, msg, args...)
+	if requestID := middleware.GetReqID(ctx); requestID != "" {
+		fields = append(fields, "request_id", requestID)
+	}
+	return fields
 }
 
 // WithService returns a logger with a static service attribute.

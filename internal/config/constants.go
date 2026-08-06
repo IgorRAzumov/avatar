@@ -7,9 +7,9 @@ const (
 	DefaultServiceVersion   = "1.0.0"
 	DefaultEnvironment      = "development"
 	DefaultLogLevel         = "info"
-	DefaultTracingEnabled   = false
-	DefaultLogsEnabled      = false
-	DefaultMetricsEnabled   = false
+	DefaultTracingEnabled   = true
+	DefaultLogsEnabled      = true
+	DefaultMetricsEnabled   = true
 	DefaultOTLPEndpoint     = "localhost:4317"
 	DefaultTraceSampleRatio = 1.0
 

@@ -18,9 +18,7 @@ func main() {
 		cmd.ExitWithLog(nil, err)
 	}
 
-	serviceName := cfg.Observability.ServiceName + "-worker"
-
-	log, runtime, err := app.InitApp(cfg, serviceName)
+	log, runtime, err := app.InitApp(cfg, cfg.Observability.ServiceName)
 	if err != nil {
 		cmd.ExitWithLog(nil, err)
 	}

@@ -29,9 +29,6 @@ func RequestLogger(logger *logger.Logger) func(http.Handler) http.Handler {
 				"status", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 			}
-			if requestID := middleware.GetReqID(ctx); requestID != "" {
-				args = append(args, "request_id", requestID)
-			}
 
 			if status >= 500 {
 				logger.Error(ctx, "request", args...)

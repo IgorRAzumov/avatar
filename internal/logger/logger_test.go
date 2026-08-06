@@ -9,6 +9,7 @@ import (
 
 	"avatar/internal/logger"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -65,4 +66,16 @@ func TestContextAddsTraceFields(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "trace_id")
 	assert.Contains(t, out, "span_id")
+}
+
+func TestContextAddsRequestID(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(&buf, slog.LevelInfo)
+
+	ctx := context.WithValue(context.Background(), middleware.RequestIDKey, "req-123")
+	log.Info(ctx, "request")
+
+	out := buf.String()
+	assert.Contains(t, out, "request_id")
+	assert.Contains(t, out, "req-123")
 }

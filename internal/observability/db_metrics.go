@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -12,7 +11,7 @@ const databaseStatsQueryTimeout = 5 * time.Second
 
 type DatabaseStats struct {
 	PoolConnections func() (active, idle int64)
-	CountAvatars    func(ctx context.Context) (total int64, byUser map[string]int64, err error)
+	CountAvatars    func(ctx context.Context) (total int64, err error)
 }
 
 func (metrics *Metrics) RegisterDatabaseMetrics(stats DatabaseStats) (unregister func(), err error) {
@@ -38,12 +37,6 @@ func (metrics *Metrics) RegisterDatabaseMetrics(stats DatabaseStats) (unregister
 		return nil, err
 	}
 
-	activeAvatarsByUser, err := metrics.meter.Float64ObservableGauge("avatars_active_by_user",
-		metric.WithDescription("Number of active avatars per user"))
-	if err != nil {
-		return nil, err
-	}
-
 	registration, err := metrics.meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
 			active, idle := stats.PoolConnections()
@@ -53,25 +46,17 @@ func (metrics *Metrics) RegisterDatabaseMetrics(stats DatabaseStats) (unregister
 			queryCtx, cancel := context.WithTimeout(ctx, databaseStatsQueryTimeout)
 			defer cancel()
 
-			total, byUser, err := stats.CountAvatars(queryCtx)
+			total, err := stats.CountAvatars(queryCtx)
 			if err != nil {
-				return nil
+				return err
 			}
 
 			observer.ObserveFloat64(activeAvatarsTotal, float64(total))
-			for userID, count := range byUser {
-				observer.ObserveFloat64(
-					activeAvatarsByUser,
-					float64(count),
-					metric.WithAttributes(attribute.String("user_id", userID)),
-				)
-			}
 			return nil
 		},
 		activeConnections,
 		idleConnections,
 		activeAvatarsTotal,
-		activeAvatarsByUser,
 	)
 	if err != nil {
 		return nil, err
