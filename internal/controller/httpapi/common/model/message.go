@@ -12,4 +12,6 @@ const (
 	MsgInvalidRequest         = "Invalid request"
 	MsgFileFieldRequired      = "file field is required"
 	MsgFailedToReadFile       = "Failed to read file"
+	MsgTooManyRequests        = "Too many requests"
+	MsgServiceUnavailable     = "Service temporarily unavailable"
 )

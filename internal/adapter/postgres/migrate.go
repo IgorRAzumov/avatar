@@ -28,6 +28,24 @@ func Migrations() fs.FS {
 	return sub
 }
 
+func Migrate(ctx context.Context, dsn string) error {
+	if dsn == "" {
+		return fmt.Errorf("database dsn is required")
+	}
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping postgres: %w", err)
+	}
+
+	return RunMigrations(ctx, pool, Migrations())
+}
+
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) error {
 	if pool == nil {
 		return fmt.Errorf("database pool is required")

@@ -7,9 +7,9 @@ import (
 
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
+	"avatar/internal/domain/usecase/process"
 	"avatar/internal/logger"
 	"avatar/internal/observability"
-	"avatar/internal/processor"
 	"avatar/internal/retry"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -17,7 +17,7 @@ import (
 
 type Consumer struct {
 	client    *Client
-	processor *processor.ImageProcessor
+	processor *process.ImageProcessor
 	log       *logger.Logger
 	kit       observability.Kit
 }
@@ -26,7 +26,7 @@ type messageHandler func(ctx context.Context, delivery amqp.Delivery) error
 
 func NewConsumer(
 	cfg config.RabbitMQConfig,
-	imageProcessor *processor.ImageProcessor,
+	imageProcessor *process.ImageProcessor,
 	log *logger.Logger,
 	kit observability.Kit,
 ) (*Consumer, error) {

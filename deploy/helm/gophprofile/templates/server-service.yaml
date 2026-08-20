@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gophprofile.serverName" . }}
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- include "gophprofile.serverSelectorLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "gophprofile.serverSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+    - name: metrics
+      port: {{ .Values.ports.metrics }}
+      targetPort: metrics

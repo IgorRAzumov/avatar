@@ -1,0 +1,32 @@
+dependencies:
+  enabled: true
+
+ingress:
+  className: traefik
+
+autoscaling:
+  enabled: true
+
+serviceMonitor:
+  enabled: false
+
+networkPolicy:
+  ingressNamespaces:
+    - kube-system
+
+migrate:
+  hook: post-install,pre-upgrade
+
+config:
+  baseURL: http://avatars.example.com
+  s3Endpoint: minio:9000
+  otelEnvironment: local
+  otelTracingEnabled: "false"
+  otelLogsEnabled: "false"
+
+secret:
+  create: true
+  databaseDsn: postgres://avatar:avatar@postgres:5432/avatar?sslmode=disable
+  s3AccessKey: minioadmin
+  s3SecretKey: minioadmin
+  rabbitmqUrl: amqp://guest:guest@rabbitmq:5672/

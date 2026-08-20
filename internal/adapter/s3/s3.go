@@ -3,10 +3,12 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	"avatar/internal/adapter/objectkey"
+	"avatar/internal/circuitbreaker"
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
 	"avatar/internal/observability"
@@ -15,10 +17,13 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+const breakerName = "s3"
+
 type Storage struct {
-	client *minio.Client
-	bucket string
-	kit    observability.Kit
+	client  *minio.Client
+	bucket  string
+	kit     observability.Kit
+	breaker *circuitbreaker.Breaker
 }
 
 func NewStorage(cfg config.S3Config, kit observability.Kit) (*Storage, error) {
@@ -31,11 +36,22 @@ func NewStorage(cfg config.S3Config, kit observability.Kit) (*Storage, error) {
 		return nil, fmt.Errorf("create s3 client: %w", err)
 	}
 
-	return &Storage{client: client, bucket: cfg.Bucket, kit: kit}, nil
+	return &Storage{
+		client: client,
+		bucket: cfg.Bucket,
+		kit:    kit,
+		breaker: circuitbreaker.New(circuitbreaker.Options{
+			Name: breakerName,
+			IsSuccessful: func(err error) bool {
+				return err == nil || errors.Is(err, model.ErrNotFound)
+			},
+			OnStateChange: circuitbreaker.ReportStateTo(kit.Metrics()),
+		}),
+	}, nil
 }
 
 func (storage *Storage) upload(ctx context.Context, key string, data []byte, contentType string) error {
-	return storage.withSpan(ctx, "s3.put_object", "put_object", func(ctx context.Context) error {
+	return storage.withBreaker(ctx, "s3.put_object", "put_object", func(ctx context.Context) error {
 		opts := minio.PutObjectOptions{}
 		if contentType != "" {
 			opts.ContentType = contentType
@@ -58,7 +74,7 @@ func (storage *Storage) upload(ctx context.Context, key string, data []byte, con
 
 func (storage *Storage) download(ctx context.Context, key string) ([]byte, error) {
 	var result []byte
-	err := storage.withSpan(ctx, "s3.get_object", "get_object", func(ctx context.Context) error {
+	err := storage.withBreaker(ctx, "s3.get_object", "get_object", func(ctx context.Context) error {
 		obj, err := storage.client.GetObject(ctx, storage.bucket, key, minio.GetObjectOptions{})
 		if err != nil {
 			return fmt.Errorf("get object: %w", err)
@@ -80,6 +96,21 @@ func (storage *Storage) download(ctx context.Context, key string) ([]byte, error
 		return nil
 	}, observability.String("s3.key", key))
 	return result, err
+}
+
+func (storage *Storage) withBreaker(
+	ctx context.Context,
+	spanName, operation string,
+	fn func(context.Context) error,
+	attrs ...observability.Attr,
+) error {
+	err := storage.breaker.Do(func() error {
+		return storage.withSpan(ctx, spanName, operation, fn, attrs...)
+	})
+	if errors.Is(err, circuitbreaker.ErrOpen) {
+		return fmt.Errorf("%w: %s", model.ErrUnavailable, breakerName)
+	}
+	return err
 }
 
 func (storage *Storage) withSpan(
@@ -113,7 +144,7 @@ func (storage *Storage) OpenThumbnail(ctx context.Context, avatarID, size string
 }
 
 func (storage *Storage) DeleteAll(ctx context.Context, avatarID string) error {
-	return storage.withSpan(ctx, "s3.delete_all", "delete_all", func(ctx context.Context) error {
+	return storage.withBreaker(ctx, "s3.delete_all", "delete_all", func(ctx context.Context) error {
 		prefix := objectkey.AvatarDir(avatarID) + "/"
 		for obj := range storage.client.ListObjects(ctx, storage.bucket, minio.ListObjectsOptions{
 			Prefix:    prefix,

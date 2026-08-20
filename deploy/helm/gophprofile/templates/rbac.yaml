@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gophprofile.serverName" . }}
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- include "gophprofile.serverSelectorLabels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- if .Values.worker.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gophprofile.workerName" . }}
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- include "gophprofile.workerSelectorLabels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- end }}

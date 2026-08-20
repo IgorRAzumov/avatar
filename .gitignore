@@ -1,0 +1,16 @@
+# Locally built binaries
+/server
+/worker
+/migrate
+
+# Test artifacts
+*.test
+coverage.out
+
+# Local configuration with credentials
+.env
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

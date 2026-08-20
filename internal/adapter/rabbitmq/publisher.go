@@ -3,8 +3,10 @@ package rabbitmq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"avatar/internal/circuitbreaker"
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
 	"avatar/internal/observability"
@@ -12,9 +14,12 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+const breakerName = "rabbitmq"
+
 type Publisher struct {
-	client *Client
-	kit    observability.Kit
+	client  *Client
+	kit     observability.Kit
+	breaker *circuitbreaker.Breaker
 }
 
 func NewPublisher(cfg config.RabbitMQConfig, kit observability.Kit) (*Publisher, error) {
@@ -22,7 +27,14 @@ func NewPublisher(cfg config.RabbitMQConfig, kit observability.Kit) (*Publisher,
 	if err != nil {
 		return nil, err
 	}
-	return &Publisher{client: client, kit: kit}, nil
+	return &Publisher{
+		client: client,
+		kit:    kit,
+		breaker: circuitbreaker.New(circuitbreaker.Options{
+			Name:          breakerName,
+			OnStateChange: circuitbreaker.ReportStateTo(kit.Metrics()),
+		}),
+	}, nil
 }
 
 func (publisher *Publisher) PublishUploadEvent(ctx context.Context, event model.AvatarUploadEvent) error {
@@ -36,34 +48,39 @@ func (publisher *Publisher) PublishDeleteEvent(ctx context.Context, event model.
 func (publisher *Publisher) publish(ctx context.Context, routingKey, messageID string, payload any) error {
 	status := "success"
 
-	err := publisher.kit.Run(ctx, "rabbitmq.publish", func(ctx context.Context) error {
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("marshal event: %w", err)
-		}
+	err := publisher.breaker.Do(func() error {
+		return publisher.kit.Run(ctx, "rabbitmq.publish", func(ctx context.Context) error {
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return fmt.Errorf("marshal event: %w", err)
+			}
 
-		headers := amqp.Table{}
-		injectTraceContext(ctx, headers)
+			headers := amqp.Table{}
+			injectTraceContext(ctx, headers)
 
-		return publisher.client.channel.PublishWithContext(
-			ctx,
-			publisher.client.exchange,
-			routingKey,
-			false,
-			false,
-			amqp.Publishing{
-				ContentType:  "application/json",
-				DeliveryMode: amqp.Persistent,
-				MessageId:    messageID,
-				Body:         body,
-				Headers:      headers,
-			},
+			return publisher.client.channel.PublishWithContext(
+				ctx,
+				publisher.client.exchange,
+				routingKey,
+				false,
+				false,
+				amqp.Publishing{
+					ContentType:  "application/json",
+					DeliveryMode: amqp.Persistent,
+					MessageId:    messageID,
+					Body:         body,
+					Headers:      headers,
+				},
+			)
+		},
+			observability.String("messaging.system", "rabbitmq"),
+			observability.String("messaging.destination", routingKey),
+			observability.String("messaging.message_id", messageID),
 		)
-	},
-		observability.String("messaging.system", "rabbitmq"),
-		observability.String("messaging.destination", routingKey),
-		observability.String("messaging.message_id", messageID),
-	)
+	})
+	if errors.Is(err, circuitbreaker.ErrOpen) {
+		err = fmt.Errorf("%w: %s", model.ErrUnavailable, breakerName)
+	}
 	if err != nil {
 		status = "error"
 	}

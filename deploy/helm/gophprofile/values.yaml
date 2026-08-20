@@ -1,0 +1,147 @@
+name: avatar
+
+image:
+  repository: avatar-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ports:
+  http: 8080
+  metrics: 9090
+
+server:
+  replicaCount: 3
+
+worker:
+  enabled: true
+  replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: avatars.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  cpuUtilization: 70
+  memoryUtilization: 80
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels:
+    release: prometheus
+
+networkPolicy:
+  enabled: true
+  ingressNamespaces:
+    - ingress-nginx
+  monitoringNamespaces:
+    - monitoring
+    - cattle-monitoring-system
+  externalEgress: []
+
+migrate:
+  enabled: true
+  hook: post-install,pre-upgrade
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+
+config:
+  baseURL: http://avatars.example.com
+  maxUploadMB: "10"
+  trustedProxyCIDRs: 10.42.0.0/16
+  postgresAutoMigrate: "false"
+  s3Endpoint: minio:9000
+  s3Bucket: avatars
+  s3UseSSL: "false"
+  s3Region: us-east-1
+  rabbitmqEnabled: "true"
+  rabbitmqExchange: avatars.exchange
+  rateLimitEnabled: "true"
+  rateLimitRPS: "50"
+  otelServiceVersion: "1.0.0"
+  otelEnvironment: kubernetes
+  otelTracingEnabled: "false"
+  otelTraceSampleRatio: "1"
+  otelLogsEnabled: "false"
+  otelMetricsEnabled: "true"
+  otelExporterOTLPEndpoint: ""
+  logLevel: info
+
+secret:
+  create: true
+  existingSecret: ""
+  databaseDsn: postgres://avatar:avatar@postgres:5432/avatar?sslmode=disable
+  s3AccessKey: minioadmin
+  s3SecretKey: minioadmin
+  rabbitmqUrl: amqp://guest:guest@rabbitmq:5672/
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+terminationGracePeriodSeconds: 20
+
+dependencies:
+  enabled: false
+  postgres:
+    image: postgres:16-alpine
+    user: avatar
+    password: avatar
+    database: avatar
+    storage: 1Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    clientImage: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    storage: 2Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  rabbitmq:
+    image: rabbitmq:3.13.7-management-alpine
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m

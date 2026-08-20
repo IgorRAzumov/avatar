@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: avatar-worker
+  namespace: avatar
+  labels:
+    app: avatar-worker
+    app.kubernetes.io/part-of: gophprofile
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: avatar-worker
+  template:
+    metadata:
+      labels:
+        app: avatar-worker
+        app.kubernetes.io/part-of: gophprofile
+    spec:
+      serviceAccountName: avatar-worker
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: avatar-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/app/worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          envFrom:
+            - configMapRef:
+                name: avatar-config
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: avatar-service-worker
+            - name: DATABASE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: avatar-secrets
+                  key: database-dsn
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: avatar-secrets
+                  key: s3-access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: avatar-secrets
+                  key: s3-secret-key
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: avatar-secrets
+                  key: rabbitmq-url
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: tmp
+          emptyDir: {}

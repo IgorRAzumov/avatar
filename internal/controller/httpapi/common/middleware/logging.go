@@ -12,7 +12,7 @@ import (
 func RequestLogger(logger *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			if ShouldSkipObservability(request.URL.Path) {
+			if ShouldSkip(request.URL.Path) {
 				next.ServeHTTP(writer, request)
 				return
 			}

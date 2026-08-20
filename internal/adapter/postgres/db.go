@@ -5,20 +5,27 @@ import (
 	"fmt"
 
 	"avatar/internal/adapter/postgres/repository"
+	"avatar/internal/config"
 	"avatar/internal/observability"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Open(ctx context.Context, dsn string, kit observability.Kit) (*repository.PostgresAvatarStore, func(), error) {
-	pool, err := pgxpool.New(ctx, dsn)
+func Open(
+	ctx context.Context,
+	cfg config.PostgresConfig,
+	kit observability.Kit,
+) (*repository.PostgresAvatarStore, func(), error) {
+	pool, err := pgxpool.New(ctx, cfg.DSN)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect postgres: %w", err)
 	}
 
-	if err := RunMigrations(ctx, pool, Migrations()); err != nil {
-		pool.Close()
-		return nil, nil, fmt.Errorf("migrate: %w", err)
+	if cfg.AutoMigrate {
+		if err := RunMigrations(ctx, pool, Migrations()); err != nil {
+			pool.Close()
+			return nil, nil, fmt.Errorf("migrate: %w", err)
+		}
 	}
 
 	store := repository.NewPostgresAvatarStore(pool, kit)

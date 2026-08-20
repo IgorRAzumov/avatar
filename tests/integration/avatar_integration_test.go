@@ -14,10 +14,10 @@ import (
 	"avatar/internal/adapter/postgres/repository"
 	"avatar/internal/config"
 	"avatar/internal/domain/model"
+	"avatar/internal/domain/usecase/process"
 	"avatar/internal/imageformat"
 	"avatar/internal/logger"
 	"avatar/internal/observability"
-	"avatar/internal/processor"
 	"avatar/internal/testutil"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,7 +91,7 @@ func TestServiceUploadFlow(t *testing.T) {
 	store := testutil.NewMemoryStorage()
 
 	repo := repository.NewPostgresAvatarStore(pool, observability.NewTestKit())
-	proc := processor.NewAsyncImageResizerProcessor(repo, repo, store, logger.Nop(), observability.NewTestKit())
+	proc := process.NewAsyncImageResizerProcessor(repo, repo, store, logger.Nop(), observability.NewTestKit())
 	query := read.NewReadUsecase(repo, store)
 	command := write.NewWriteUsecase(repo, repo, store, proc, config.DefaultMaxUploadBytes())
 

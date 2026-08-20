@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"avatar/internal/controller/httpapi/docs"
 	"avatar/internal/controller/httpapi/health"
 	"avatar/internal/controller/httpapi/web"
 	"avatar/internal/controller/httpapi/write"
@@ -15,6 +16,45 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRouterDoesNotExposeMetrics(t *testing.T) {
+	checker := domainhealth.NewChecker(nil, nil, "storage", nil)
+	router := NewRouter(RouterDeps{
+		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
+		Health:      health.New(checker),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestRouterOpenAPIRoutes(t *testing.T) {
+	checker := domainhealth.NewChecker(nil, nil, "storage", nil)
+	router := NewRouter(RouterDeps{
+		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
+		Health:      health.New(checker),
+		Docs:        docs.New(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "openapi: 3.0.3")
+
+	req = httptest.NewRequest(http.MethodGet, "/docs", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "swagger-ui")
+}
 
 func TestRouterHealthRoute(t *testing.T) {
 	checker := domainhealth.NewChecker(nil, nil, "storage", nil)
@@ -30,6 +70,22 @@ func TestRouterHealthRoute(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestRouterLivenessRouteIgnoresDependencies(t *testing.T) {
+	checker := domainhealth.NewChecker(nil, nil, "storage", nil)
+	router := NewRouter(RouterDeps{
+		Logger:      logger.Nop(),
+		ServiceName: "avatar-service-test",
+		Kit:         observability.NewTestKit(),
+		Health:      health.New(checker),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestRouterAPIRoutesRegistered(t *testing.T) {

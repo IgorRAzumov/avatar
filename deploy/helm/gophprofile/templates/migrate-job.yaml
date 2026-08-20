@@ -1,0 +1,65 @@
+{{- if .Values.migrate.enabled }}
+{{- if and .Values.secret.create (not .Values.secret.existingSecret) (contains "pre-install" .Values.migrate.hook) }}
+{{- fail "migrate.hook cannot contain pre-install while secret.create is true: the release secret does not exist yet. Use post-install,pre-upgrade or provide secret.existingSecret." }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gophprofile.name" . }}-migrate
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ .Values.migrate.hook | quote }}
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "gophprofile.name" . }}-migrate
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ .Values.migrate.hook | quote }}
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        {{- include "gophprofile.labels" . | nindent 8 }}
+        app: {{ include "gophprofile.name" . }}-migrate
+    spec:
+      serviceAccountName: {{ include "gophprofile.name" . }}-migrate
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/migrate"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: DATABASE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gophprofile.secretName" . }}
+                  key: database-dsn
+            - name: OTEL_TRACING_ENABLED
+              value: "false"
+            - name: OTEL_LOGS_ENABLED
+              value: "false"
+            - name: OTEL_METRICS_ENABLED
+              value: "false"
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+{{- end }}

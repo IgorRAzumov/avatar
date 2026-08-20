@@ -12,19 +12,22 @@ type Config struct {
 	S3            S3Config
 	RabbitMQ      RabbitMQConfig
 	Observability ObservabilityConfig
+	RateLimit     RateLimitConfig
 }
 
 type ServerConfig struct {
-	Addr        string `env:"SERVER_ADDR"`
-	BaseURL     string `env:"BASE_URL"`
-	MaxUploadMB int64  `env:"MAX_UPLOAD_MB"`
-	// ReadTimeout/WriteTimeout are not env-configurable; set from defaults.
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Addr              string   `env:"SERVER_ADDR"`
+	MetricsAddr       string   `env:"METRICS_ADDR"`
+	BaseURL           string   `env:"BASE_URL"`
+	MaxUploadMB       int64    `env:"MAX_UPLOAD_MB"`
+	TrustedProxyCIDRs []string `env:"TRUSTED_PROXY_CIDRS" envSeparator:","`
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
 }
 
 type PostgresConfig struct {
-	DSN string `env:"DATABASE_DSN"`
+	DSN         string `env:"DATABASE_DSN"`
+	AutoMigrate bool   `env:"POSTGRES_AUTO_MIGRATE"`
 }
 
 type S3Config struct {
@@ -40,6 +43,11 @@ type RabbitMQConfig struct {
 	URL      string `env:"RABBITMQ_URL"`
 	Enabled  bool   `env:"RABBITMQ_ENABLED"`
 	Exchange string `env:"RABBITMQ_EXCHANGE"`
+}
+
+type RateLimitConfig struct {
+	Enabled bool `env:"RATE_LIMIT_ENABLED"`
+	RPS     int  `env:"RATE_LIMIT_RPS"`
 }
 
 type ObservabilityConfig struct {
@@ -66,13 +74,15 @@ func defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Addr:         DefaultServerAddr,
+			MetricsAddr:  DefaultMetricsAddr,
 			BaseURL:      DefaultBaseURL,
 			MaxUploadMB:  DefaultMaxUploadMB,
 			ReadTimeout:  DefaultServerReadTimeout,
 			WriteTimeout: DefaultServerWriteTimeout,
 		},
 		Postgres: PostgresConfig{
-			DSN: DefaultPostgresDSN,
+			DSN:         DefaultPostgresDSN,
+			AutoMigrate: DefaultPostgresAutoMigrate,
 		},
 		S3: S3Config{
 			Endpoint:  DefaultS3Endpoint,
@@ -86,6 +96,10 @@ func defaults() *Config {
 			URL:      DefaultRabbitMQURL,
 			Enabled:  false,
 			Exchange: DefaultRabbitMQExchange,
+		},
+		RateLimit: RateLimitConfig{
+			Enabled: DefaultRateLimitEnabled,
+			RPS:     DefaultRateLimitRPS,
 		},
 		Observability: ObservabilityConfig{
 			ServiceName:      DefaultServiceName,
