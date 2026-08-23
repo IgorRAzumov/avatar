@@ -15,7 +15,7 @@ import (
 func TestRunRequiresRabbitMQ(t *testing.T) {
 	cfg := &config.Config{RabbitMQ: config.RabbitMQConfig{Enabled: false}}
 
-	err := worker.Run(context.Background(), logger.Nop(), cfg, nil)
+	err := worker.Run(context.Background(), logger.Nop(), cfg, nil, nil)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "RABBITMQ_ENABLED=true")
 }

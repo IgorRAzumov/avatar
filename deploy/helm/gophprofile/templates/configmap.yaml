@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gophprofile.name" . }}-config
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+data:
+  SERVER_ADDR: ":{{ .Values.ports.http }}"
+  METRICS_ADDR: ":{{ .Values.ports.metrics }}"
+  BASE_URL: {{ .Values.config.baseURL | quote }}
+  MAX_UPLOAD_MB: {{ .Values.config.maxUploadMB | quote }}
+  TRUSTED_PROXY_CIDRS: {{ .Values.config.trustedProxyCIDRs | quote }}
+  POSTGRES_AUTO_MIGRATE: {{ .Values.config.postgresAutoMigrate | quote }}
+  S3_ENDPOINT: {{ .Values.config.s3Endpoint | quote }}
+  S3_BUCKET: {{ .Values.config.s3Bucket | quote }}
+  S3_USE_SSL: {{ .Values.config.s3UseSSL | quote }}
+  S3_REGION: {{ .Values.config.s3Region | quote }}
+  RABBITMQ_ENABLED: {{ .Values.config.rabbitmqEnabled | quote }}
+  RABBITMQ_EXCHANGE: {{ .Values.config.rabbitmqExchange | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.config.rateLimitEnabled | quote }}
+  RATE_LIMIT_RPS: {{ .Values.config.rateLimitRPS | quote }}
+  OTEL_SERVICE_VERSION: {{ .Values.config.otelServiceVersion | quote }}
+  OTEL_ENVIRONMENT: {{ .Values.config.otelEnvironment | quote }}
+  OTEL_TRACING_ENABLED: {{ .Values.config.otelTracingEnabled | quote }}
+  OTEL_TRACE_SAMPLE_RATIO: {{ .Values.config.otelTraceSampleRatio | quote }}
+  OTEL_LOGS_ENABLED: {{ .Values.config.otelLogsEnabled | quote }}
+  OTEL_METRICS_ENABLED: {{ .Values.config.otelMetricsEnabled | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otelExporterOTLPEndpoint | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}

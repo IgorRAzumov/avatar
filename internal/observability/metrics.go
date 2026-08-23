@@ -26,6 +26,7 @@ type Metrics struct {
 	s3OperationsTotal         metric.Int64Counter
 	s3OperationDuration       metric.Float64Histogram
 	dbQueryDuration           metric.Float64Histogram
+	circuitBreakerState       metric.Int64Gauge
 }
 
 var (
@@ -127,6 +128,12 @@ func NewMetrics(meter metric.Meter) (*Metrics, error) {
 		return nil, err
 	}
 
+	metrics.circuitBreakerState, err = meter.Int64Gauge("circuit_breaker_state",
+		metric.WithDescription("Circuit breaker state: 0 closed, 1 half-open, 2 open"))
+	if err != nil {
+		return nil, err
+	}
+
 	return metrics, nil
 }
 
@@ -209,6 +216,15 @@ func (metrics *Metrics) RecordDBQuery(ctx context.Context, operation string, dur
 
 	metrics.dbQueryDuration.Record(ctx, duration.Seconds(),
 		metric.WithAttributes(attribute.String("operation", operation)))
+}
+
+func (metrics *Metrics) RecordCircuitBreakerState(ctx context.Context, name string, state int64) {
+	if metrics == nil || metrics.circuitBreakerState == nil {
+		return
+	}
+
+	metrics.circuitBreakerState.Record(ctx, state,
+		metric.WithAttributes(attribute.String("name", name)))
 }
 
 func (metrics *Metrics) recordStatusCounterAndHistogram(

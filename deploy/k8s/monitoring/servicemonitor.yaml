@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: avatar-service
+  namespace: avatar
+  labels:
+    app: avatar-service
+    app.kubernetes.io/part-of: gophprofile
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: avatar-service
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: avatar-worker
+  namespace: avatar
+  labels:
+    app: avatar-worker
+    app.kubernetes.io/part-of: gophprofile
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: avatar-worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

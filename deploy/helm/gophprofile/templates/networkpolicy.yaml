@@ -1,0 +1,55 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gophprofile.serverName" . }}-netpol
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- include "gophprofile.serverSelectorLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "gophprofile.serverSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- with .Values.networkPolicy.ingressNamespaces }}
+    - from:
+        {{- range . }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        - namespaceSelector:
+            matchLabels:
+              name: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.ports.http }}
+    {{- end }}
+    {{- include "gophprofile.metricsIngress" . | nindent 4 }}
+  egress:
+    {{- include "gophprofile.appEgress" . | nindent 4 }}
+{{- if .Values.worker.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "gophprofile.workerName" . }}-netpol
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- include "gophprofile.workerSelectorLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "gophprofile.workerSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- include "gophprofile.metricsIngress" . | nindent 4 }}
+  egress:
+    {{- include "gophprofile.appEgress" . | nindent 4 }}
+{{- end }}
+{{- end }}

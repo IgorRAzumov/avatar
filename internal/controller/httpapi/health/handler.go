@@ -17,6 +17,10 @@ func New(health repository.HealthRepository) *Handler {
 	return &Handler{healthRepository: health}
 }
 
+func (handler *Handler) Live(writer http.ResponseWriter, _ *http.Request) {
+	util.WriteJSON(writer, http.StatusOK, model.HealthResponse{Status: domainmodel.HealthStatusOK})
+}
+
 func (handler *Handler) Health(writer http.ResponseWriter, request *http.Request) {
 	report := handler.healthRepository.Check(request.Context())
 	resp := model.HealthResponse{

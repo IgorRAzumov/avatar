@@ -41,6 +41,10 @@ func WriteServiceError(ctx context.Context, logger *logger.Logger, w http.Respon
 			Error:   commonmodel.MsgFileTooLarge,
 			MaxSize: maxSize,
 		})
+	case errors.Is(err, model.ErrUnavailable):
+		WriteError(w, http.StatusServiceUnavailable, commonmodel.ErrorResponse{
+			Error: commonmodel.MsgServiceUnavailable,
+		})
 	default:
 		logger.Error(ctx, "request failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, commonmodel.ErrorResponse{Error: commonmodel.MsgInternalServerError})

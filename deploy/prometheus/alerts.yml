@@ -1,0 +1,57 @@
+groups:
+  - name: gophprofile
+    rules:
+      - alert: AvatarServiceDown
+        expr: up{job="avatar-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: GophProfile не отдаёт метрики
+          description: Target avatar-service недоступен больше минуты.
+
+      - alert: AvatarServiceHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Доля 5xx выше 5%
+          description: Проверьте логи, S3, Postgres и RabbitMQ.
+
+      - alert: AvatarServiceHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 HTTP latency выше 1s
+
+      - alert: AvatarUploadFailures
+        expr: sum(rate(avatars_uploads_total{status="error"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Растёт число неуспешных загрузок
+
+      - alert: AvatarCircuitBreakerOpen
+        expr: max by (name) (circuit_breaker_state) == 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Circuit breaker {{ $labels.name }} открыт
+          description: Внешняя зависимость недоступна, запросы отбиваются без обращения к ней.
+
+      - alert: AvatarProcessingFailures
+        expr: sum(rate(avatars_processing_total{status="error"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker не обрабатывает изображения

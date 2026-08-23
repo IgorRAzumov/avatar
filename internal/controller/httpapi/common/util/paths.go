@@ -8,6 +8,11 @@ import (
 const (
 	VersionPrefix = "/api/v1"
 	AvatarsPrefix = "/api/v1/avatars"
+
+	HealthPath   = "/health"
+	LivenessPath = "/health/live"
+	DocsPath     = "/docs"
+	OpenAPIPath  = "/openapi.yaml"
 )
 
 func AvatarRelativePath(id string) string {

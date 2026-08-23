@@ -2,5 +2,5 @@ package model
 
 type HealthResponse struct {
 	Status     string            `json:"status"`
-	Components map[string]string `json:"components"`
+	Components map[string]string `json:"components,omitempty"`
 }

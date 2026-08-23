@@ -7,9 +7,9 @@ import (
 	"avatar/internal/adapter/rabbitmq"
 	"avatar/internal/config"
 	domainrepo "avatar/internal/domain/repository"
+	"avatar/internal/domain/usecase/process"
 	"avatar/internal/logger"
 	"avatar/internal/observability"
-	"avatar/internal/processor"
 )
 
 type Pinger interface {
@@ -24,7 +24,7 @@ func NewPublisher(
 	log *logger.Logger,
 	kit observability.Kit,
 ) (domainrepo.EventPublisherRepository, Pinger, error) {
-	imageProcessor := processor.NewImageProcessor(readRepository, writeRepository, filesRepository, kit)
+	imageProcessor := process.NewImageProcessor(readRepository, writeRepository, filesRepository, kit)
 
 	if cfg.RabbitMQ.Enabled {
 		publisher, err := rabbitmq.NewPublisher(cfg.RabbitMQ, kit)
@@ -34,6 +34,6 @@ func NewPublisher(
 		return publisher, publisher, nil
 	}
 
-	asyncPublisher := processor.NewAsyncPublisher(imageProcessor, log, kit)
+	asyncPublisher := process.NewAsyncPublisher(imageProcessor, log, kit)
 	return asyncPublisher, nil, nil
 }

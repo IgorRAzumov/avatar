@@ -3,33 +3,49 @@ package worker
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"avatar/internal/adapter/postgres"
 	"avatar/internal/adapter/rabbitmq"
-	"avatar/internal/app"
+	"avatar/internal/adapter/s3"
 	"avatar/internal/config"
+	"avatar/internal/controller/metricsapi"
+	"avatar/internal/domain/usecase/process"
 	"avatar/internal/logger"
 	"avatar/internal/observability"
-	"avatar/internal/processor"
 )
 
-func Run(ctx context.Context, log *logger.Logger, cfg *config.Config, kit observability.Kit) error {
+func Run(
+	ctx context.Context,
+	log *logger.Logger,
+	cfg *config.Config,
+	kit observability.Kit,
+	metricsHandler http.Handler,
+) error {
 	if !cfg.RabbitMQ.Enabled {
 		return fmt.Errorf("worker requires RABBITMQ_ENABLED=true")
 	}
 
-	avatarStore, closeStore, err := postgres.Open(ctx, cfg.Postgres.DSN, kit)
+	metrics := metricsapi.New(log, cfg.Server.MetricsAddr, metricsHandler)
+	metrics.Start()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), config.DefaultShutdownTimeout)
+		defer cancel()
+		metrics.Shutdown(shutdownCtx)
+	}()
+
+	avatarStore, closeStore, err := postgres.Open(ctx, cfg.Postgres, kit)
 	if err != nil {
 		return err
 	}
 	defer closeStore()
 
-	fileStore, err := app.NewFileStore(cfg, kit)
+	fileStore, err := s3.NewStorage(cfg.S3, kit)
 	if err != nil {
 		return err
 	}
 
-	imageProcessor := processor.NewImageProcessor(avatarStore, avatarStore, fileStore, kit)
+	imageProcessor := process.NewImageProcessor(avatarStore, avatarStore, fileStore, kit)
 	consumer, err := rabbitmq.NewConsumer(cfg.RabbitMQ, imageProcessor, log, kit)
 	if err != nil {
 		return err

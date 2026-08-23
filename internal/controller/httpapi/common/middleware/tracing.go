@@ -13,7 +13,7 @@ func Tracing(serviceName string) func(http.Handler) http.Handler {
 				return request.Method + " " + routePattern(request)
 			}),
 			otelhttp.WithFilter(func(request *http.Request) bool {
-				return !ShouldSkipObservability(request.URL.Path)
+				return !ShouldSkip(request.URL.Path)
 			}),
 		)
 	}

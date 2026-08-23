@@ -8,4 +8,5 @@ var (
 	ErrInvalidFormat = errors.New("invalid file format")
 	ErrFileTooLarge  = errors.New("file too large")
 	ErrMissingUserID = errors.New("missing user id")
+	ErrUnavailable   = errors.New("dependency unavailable")
 )

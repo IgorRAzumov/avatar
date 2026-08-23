@@ -1,13 +1,12 @@
 package main
 
 import (
-	"avatar/cmd"
 	"context"
 	"errors"
 	"os/signal"
 	"syscall"
 
-	"avatar/internal/app"
+	"avatar/cmd"
 	"avatar/internal/config"
 	"avatar/internal/worker"
 )
@@ -18,7 +17,7 @@ func main() {
 		cmd.ExitWithLog(nil, err)
 	}
 
-	log, runtime, err := app.InitApp(cfg, cfg.Observability.ServiceName)
+	log, runtime, err := cmd.InitApp(cfg, cfg.Observability.ServiceName)
 	if err != nil {
 		cmd.ExitWithLog(nil, err)
 	}
@@ -27,7 +26,8 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := worker.Run(ctx, log, cfg, runtime.Kit); err != nil && !errors.Is(err, context.Canceled) {
+	err = worker.Run(ctx, log, cfg, runtime.Kit, runtime.MetricsHandler)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		cmd.ShutdownRuntime(runtime)
 		cmd.ExitWithLog(log, err)
 	}

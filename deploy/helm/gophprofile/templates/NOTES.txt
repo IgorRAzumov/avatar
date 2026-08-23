@@ -1,0 +1,21 @@
+GophProfile is installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+API: http://{{ .Values.ingress.host }}/
+Health: http://{{ .Values.ingress.host }}/health
+Metrics: port {{ .Values.ports.metrics }} on Service {{ include "gophprofile.serverName" . }}, path /metrics (not exposed through Ingress)
+
+{{- if .Values.ingress.enabled }}
+
+Add to /etc/hosts if you are on a local cluster:
+  127.0.0.1 {{ .Values.ingress.host }}
+{{- end }}
+
+{{- if .Values.dependencies.enabled }}
+
+In-cluster Postgres, MinIO and RabbitMQ are enabled.
+{{- end }}
+
+{{- if .Values.migrate.enabled }}
+
+DB migrations run as a Helm hook ({{ .Values.migrate.hook }}); the application itself starts with POSTGRES_AUTO_MIGRATE={{ .Values.config.postgresAutoMigrate }}.
+{{- end }}

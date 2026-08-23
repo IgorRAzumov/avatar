@@ -16,6 +16,7 @@ type Recorder interface {
 	RecordRabbitMQConsumed(ctx context.Context, queue, status string)
 	RecordS3Operation(ctx context.Context, operation, status string, duration time.Duration)
 	RecordDBQuery(ctx context.Context, operation string, duration time.Duration)
+	RecordCircuitBreakerState(ctx context.Context, name string, state int64)
 }
 
 type DatabaseMetricsRegistrar interface {
@@ -36,6 +37,7 @@ func (noopRecorder) RecordRabbitMQPublished(context.Context, string, string)    
 func (noopRecorder) RecordRabbitMQConsumed(context.Context, string, string)                   {}
 func (noopRecorder) RecordS3Operation(context.Context, string, string, time.Duration)         {}
 func (noopRecorder) RecordDBQuery(context.Context, string, time.Duration)                     {}
+func (noopRecorder) RecordCircuitBreakerState(context.Context, string, int64)                 {}
 
 func (noopRecorder) RegisterDatabaseMetrics(DatabaseStats) (func(), error) {
 	return func() {}, nil

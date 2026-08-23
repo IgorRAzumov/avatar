@@ -6,6 +6,7 @@ import (
 	"avatar/internal/controller/httpapi/common/util"
 
 	apimiddleware "avatar/internal/controller/httpapi/common/middleware"
+	"avatar/internal/controller/httpapi/docs"
 	"avatar/internal/controller/httpapi/health"
 	"avatar/internal/controller/httpapi/read"
 	"avatar/internal/controller/httpapi/web"
@@ -18,26 +19,36 @@ import (
 )
 
 type RouterDeps struct {
-	Logger      *logger.Logger
-	ServiceName string
-	Kit         observability.Kit
-	AvatarRead  *read.Handler
-	AvatarWrite *write.Handler
-	Web         *web.Handler
-	Health      *health.Handler
+	Logger            *logger.Logger
+	ServiceName       string
+	Kit               observability.Kit
+	AvatarRead        *read.Handler
+	AvatarWrite       *write.Handler
+	Web               *web.Handler
+	Docs              *docs.Handler
+	Health            *health.Handler
+	RateLimit         apimiddleware.RateLimitSettings
+	TrustedProxyCIDRs []string
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
 	router := chi.NewRouter()
 
 	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
+	router.Use(apimiddleware.ClientIP(deps.TrustedProxyCIDRs))
 	router.Use(middleware.Recoverer)
 	router.Use(apimiddleware.Tracing(deps.ServiceName))
 	router.Use(apimiddleware.PrometheusMetrics(deps.Kit))
 	router.Use(apimiddleware.RequestLogger(deps.Logger))
+	router.Use(apimiddleware.RateLimit(deps.RateLimit))
 
-	router.Get("/health", deps.Health.Health)
+	router.Get(util.HealthPath, deps.Health.Health)
+	router.Get(util.LivenessPath, deps.Health.Live)
+
+	if deps.Docs != nil {
+		router.Get(util.OpenAPIPath, deps.Docs.Spec)
+		router.Get(util.DocsPath, deps.Docs.UI)
+	}
 
 	if deps.Web != nil {
 		router.Get("/", func(writer http.ResponseWriter, request *http.Request) {

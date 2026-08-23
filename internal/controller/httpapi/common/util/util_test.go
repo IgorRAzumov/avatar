@@ -38,6 +38,7 @@ func TestWriteServiceErrorMapping(t *testing.T) {
 		{"forbidden", model.ErrForbidden, http.StatusForbidden},
 		{"invalid format", model.ErrInvalidFormat, http.StatusBadRequest},
 		{"too large", model.ErrFileTooLarge, http.StatusRequestEntityTooLarge},
+		{"unavailable", model.ErrUnavailable, http.StatusServiceUnavailable},
 		{"internal", assert.AnError, http.StatusInternalServerError},
 	}
 

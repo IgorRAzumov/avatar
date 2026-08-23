@@ -20,9 +20,6 @@ exporters:
     mapping:
       mode: ecs
 
-  prometheus:
-    endpoint: 0.0.0.0:8889
-
 service:
   pipelines:
     traces:
@@ -33,7 +30,3 @@ service:
       receivers: [ otlp ]
       processors: [ batch ]
       exporters: [ elasticsearch ]
-    metrics:
-      receivers: [ otlp ]
-      processors: [ batch ]
-      exporters: [ prometheus ]

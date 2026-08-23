@@ -9,16 +9,20 @@ import (
 	"syscall"
 
 	"avatar/internal/config"
+	"avatar/internal/controller/metricsapi"
 	"avatar/internal/logger"
 )
 
-func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) error {
+func StartServer(log *logger.Logger, cfg *config.Config, handler, metricsHandler http.Handler) error {
 	server := &http.Server{
 		Addr:         cfg.Server.Addr,
 		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
+
+	metrics := metricsapi.New(log, cfg.Server.MetricsAddr, metricsHandler)
+	metrics.Start()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -42,6 +46,7 @@ func StartServer(log *logger.Logger, cfg *config.Config, handler http.Handler) e
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), config.DefaultShutdownTimeout)
 	defer cancel()
+	metrics.Shutdown(shutdownCtx)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error(context.Background(), "shutdown error", "error", err)
 		return err

@@ -12,6 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMigrateRequiresDSN(t *testing.T) {
+	err := postgres.Migrate(context.Background(), "")
+	require.ErrorContains(t, err, "database dsn is required")
+}
+
 func TestRunMigrationsRequiresPool(t *testing.T) {
 	err := postgres.RunMigrations(context.Background(), nil, postgres.Migrations())
 	require.ErrorContains(t, err, "database pool is required")

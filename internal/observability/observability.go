@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -32,9 +36,16 @@ type Config struct {
 }
 
 type Runtime struct {
-	Shutdown    func(context.Context) error
-	LogProvider *log.LoggerProvider
-	Kit         Kit
+	Shutdown       func(context.Context) error
+	LogProvider    *log.LoggerProvider
+	Kit            Kit
+	MetricsHandler http.Handler
+}
+
+type metricsRuntime struct {
+	provider *sdkmetric.MeterProvider
+	recorder Recorder
+	handler  http.Handler
 }
 
 func Init(ctx context.Context, cfg Config) (Runtime, error) {
@@ -49,12 +60,59 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 	otel.SetMeterProvider(meterProvider)
 
 	if !cfg.TracingEnabled && !cfg.LogsEnabled && !cfg.MetricsEnabled {
-		return Runtime{
-			Shutdown: func(context.Context) error { return nil },
-			Kit:      NewOTelKit(traceProvider.Tracer(TracerName), NopRecorder),
-		}, nil
+		return disabledRuntime(traceProvider), nil
 	}
 
+	res, err := newResource(ctx, cfg)
+	if err != nil {
+		return Runtime{}, err
+	}
+
+	if cfg.TracingEnabled {
+		traceProvider, err = newTraceProvider(ctx, cfg, res)
+		if err != nil {
+			return Runtime{}, err
+		}
+		otel.SetTracerProvider(traceProvider)
+	}
+
+	var logProvider *log.LoggerProvider
+	if cfg.LogsEnabled {
+		logProvider, err = newLogProvider(ctx, cfg, res)
+		if err != nil {
+			return Runtime{}, err
+		}
+	}
+
+	var metrics Recorder
+	var metricsHandler http.Handler
+	if cfg.MetricsEnabled {
+		started, err := newMetricsRuntime(res)
+		if err != nil {
+			return Runtime{}, err
+		}
+		meterProvider = started.provider
+		metrics = started.recorder
+		metricsHandler = started.handler
+		otel.SetMeterProvider(meterProvider)
+	}
+
+	return Runtime{
+		Shutdown:       shutdownRuntime(traceProvider, logProvider, meterProvider),
+		LogProvider:    logProvider,
+		Kit:            NewOTelKit(traceProvider.Tracer(TracerName), metrics),
+		MetricsHandler: metricsHandler,
+	}, nil
+}
+
+func disabledRuntime(traceProvider *sdktrace.TracerProvider) Runtime {
+	return Runtime{
+		Shutdown: func(context.Context) error { return nil },
+		Kit:      NewOTelKit(traceProvider.Tracer(TracerName), NopRecorder),
+	}
+}
+
+func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 	res, err := resource.New(ctx,
 		resource.WithFromEnv(),
 		resource.WithProcess(),
@@ -68,81 +126,82 @@ func Init(ctx context.Context, cfg Config) (Runtime, error) {
 		),
 	)
 	if err != nil {
-		return Runtime{}, fmt.Errorf("create otel resource: %w", err)
+		return nil, fmt.Errorf("create otel resource: %w", err)
+	}
+	return res, nil
+}
+
+func newTraceProvider(ctx context.Context, cfg Config, res *resource.Resource) (*sdktrace.TracerProvider, error) {
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp trace exporter: %w", err)
 	}
 
-	var logProvider *log.LoggerProvider
+	return sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.TraceSampleRatio))),
+	), nil
+}
 
-	if cfg.TracingEnabled {
-		traceExporter, err := otlptracegrpc.New(ctx,
-			otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
-			otlptracegrpc.WithInsecure(),
-		)
-		if err != nil {
-			return Runtime{}, fmt.Errorf("create otlp trace exporter: %w", err)
-		}
-
-		traceProvider = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(traceExporter),
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.TraceSampleRatio))),
-		)
-		otel.SetTracerProvider(traceProvider)
+func newLogProvider(ctx context.Context, cfg Config, res *resource.Resource) (*log.LoggerProvider, error) {
+	exporter, err := otlploggrpc.New(ctx,
+		otlploggrpc.WithEndpoint(cfg.OTLPEndpoint),
+		otlploggrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp log exporter: %w", err)
 	}
 
-	if cfg.LogsEnabled {
-		logExporter, err := otlploggrpc.New(ctx,
-			otlploggrpc.WithEndpoint(cfg.OTLPEndpoint),
-			otlploggrpc.WithInsecure(),
-		)
-		if err != nil {
-			return Runtime{}, fmt.Errorf("create otlp log exporter: %w", err)
-		}
+	return log.NewLoggerProvider(
+		log.WithResource(res),
+		log.WithProcessor(log.NewBatchProcessor(exporter)),
+	), nil
+}
 
-		logProvider = log.NewLoggerProvider(
-			log.WithResource(res),
-			log.WithProcessor(log.NewBatchProcessor(logExporter)),
-		)
+func newMetricsRuntime(res *resource.Resource) (metricsRuntime, error) {
+	registry := prometheus.NewRegistry()
+	exporter, err := otelprom.New(
+		otelprom.WithRegisterer(registry),
+		otelprom.WithTranslationStrategy(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+	)
+	if err != nil {
+		return metricsRuntime{}, fmt.Errorf("create prometheus exporter: %w", err)
 	}
 
-	var metrics Recorder
-	if cfg.MetricsEnabled {
-		metricExporter, err := otlpmetricgrpc.New(ctx,
-			otlpmetricgrpc.WithEndpoint(cfg.OTLPEndpoint),
-			otlpmetricgrpc.WithInsecure(),
-		)
-		if err != nil {
-			return Runtime{}, fmt.Errorf("create otlp metric exporter: %w", err)
-		}
-
-		meterProvider = sdkmetric.NewMeterProvider(
-			sdkmetric.WithResource(res),
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
-		)
-		otel.SetMeterProvider(meterProvider)
-
-		metrics, err = NewMetrics(meterProvider.Meter(TracerName))
-		if err != nil {
-			return Runtime{}, fmt.Errorf("init metrics instruments: %w", err)
-		}
+	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(exporter),
+	)
+	recorder, err := NewMetrics(provider.Meter(TracerName))
+	if err != nil {
+		return metricsRuntime{}, fmt.Errorf("init metrics instruments: %w", err)
 	}
 
-	shutdown := func(shutdownCtx context.Context) error {
-		shutdownCtx, cancel := context.WithTimeout(shutdownCtx, 5*time.Second)
+	return metricsRuntime{
+		provider: provider,
+		recorder: recorder,
+		handler:  promhttp.HandlerFor(registry, promhttp.HandlerOpts{}),
+	}, nil
+}
+
+func shutdownRuntime(
+	traceProvider *sdktrace.TracerProvider,
+	logProvider *log.LoggerProvider,
+	meterProvider *sdkmetric.MeterProvider,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
 		var shutdownErr error
-		shutdownErr = errors.Join(shutdownErr, traceProvider.Shutdown(shutdownCtx))
+		shutdownErr = errors.Join(shutdownErr, traceProvider.Shutdown(ctx))
 		if logProvider != nil {
-			shutdownErr = errors.Join(shutdownErr, logProvider.Shutdown(shutdownCtx))
+			shutdownErr = errors.Join(shutdownErr, logProvider.Shutdown(ctx))
 		}
-		shutdownErr = errors.Join(shutdownErr, meterProvider.Shutdown(shutdownCtx))
-		return shutdownErr
+		return errors.Join(shutdownErr, meterProvider.Shutdown(ctx))
 	}
-
-	return Runtime{
-		Shutdown:    shutdown,
-		LogProvider: logProvider,
-		Kit:         NewOTelKit(traceProvider.Tracer(TracerName), metrics),
-	}, nil
 }
