@@ -110,15 +110,29 @@ docker build -t avatar-service:latest .
 
 Сырые манифесты (Rancher Desktop, nginx ingress, metrics-server). Namespace здесь создаётся вместе с метками Pod Security Admission, миграции применяет само приложение (`POSTGRES_AUTO_MIGRATE=true`), количество реплик server отдано HPA:
 
+Секрет в репозиторий не коммитится. Сначала namespace и учётные данные, затем манифесты:
+
 ```bash
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl create secret generic avatar-secrets -n avatar \
+  --from-literal=database-dsn='postgres://avatar:avatar@postgres:5432/avatar?sslmode=disable' \
+  --from-literal=s3-access-key='minioadmin' \
+  --from-literal=s3-secret-key='minioadmin' \
+  --from-literal=rabbitmq-url='amqp://guest:guest@rabbitmq:5672/'
 kubectl apply -k deploy/k8s
 # после установки Prometheus Operator:
 kubectl apply -k deploy/k8s/monitoring
 ```
 
-Helm (предпочтительно) — здесь миграции отданы Job-хуку, поэтому в ConfigMap `POSTGRES_AUTO_MIGRATE=false`:
+Ключи секрета перечислены в `deploy/k8s/secret.example.yaml`. Готовый `secret.yaml` в git не попадает.
+
+Helm (предпочтительно) — здесь миграции отданы Job-хуку, поэтому в ConfigMap `POSTGRES_AUTO_MIGRATE=false`. Локальный values-файл с паролями тоже не коммитится:
 
 ```bash
+cp deploy/helm/gophprofile/values-local.example.yaml \
+  deploy/helm/gophprofile/values-local.yaml
+# заполнить secret.* своими значениями
+
 helm upgrade --install gophprofile deploy/helm/gophprofile \
   -n avatar --create-namespace \
   -f deploy/helm/gophprofile/values-local.yaml
@@ -150,6 +164,9 @@ nerdctl --namespace k8s.io build -t avatar-service:latest .
 Установка и ожидание готовности всех подов:
 
 ```bash
+cp deploy/helm/gophprofile/values-local.example.yaml \
+  deploy/helm/gophprofile/values-local.yaml
+
 helm upgrade --install gophprofile deploy/helm/gophprofile \
   -n avatar --create-namespace \
   -f deploy/helm/gophprofile/values-local.yaml --wait --timeout 10m

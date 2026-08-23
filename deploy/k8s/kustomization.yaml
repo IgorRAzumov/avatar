@@ -4,7 +4,6 @@ namespace: avatar
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
   - server-deployment.yaml
   - server-service.yaml
   - ingress.yaml

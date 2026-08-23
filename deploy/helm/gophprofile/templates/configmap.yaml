@@ -4,7 +4,6 @@ metadata:
   name: {{ include "gophprofile.name" . }}-config
   labels:
     {{- include "gophprofile.labels" . | nindent 4 }}
-    {{- include "gophprofile.serverSelectorLabels" . | nindent 4 }}
 data:
   SERVER_ADDR: ":{{ .Values.ports.http }}"
   METRICS_ADDR: ":{{ .Values.ports.metrics }}"

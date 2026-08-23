@@ -9,6 +9,8 @@ coverage.out
 
 # Local configuration with credentials
 .env
+deploy/k8s/secret.yaml
+deploy/helm/gophprofile/values-local.yaml
 
 # Editors and OS
 .idea/

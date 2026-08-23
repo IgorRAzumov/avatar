@@ -26,7 +26,7 @@ config:
 
 secret:
   create: true
-  databaseDsn: postgres://avatar:avatar@postgres:5432/avatar?sslmode=disable
-  s3AccessKey: minioadmin
-  s3SecretKey: minioadmin
-  rabbitmqUrl: amqp://guest:guest@rabbitmq:5672/
+  databaseDsn: postgres://USER:PASSWORD@postgres:5432/avatar?sslmode=disable
+  s3AccessKey: CHANGE_ME
+  s3SecretKey: CHANGE_ME
+  rabbitmqUrl: amqp://USER:PASSWORD@rabbitmq:5672/
